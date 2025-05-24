@@ -76,8 +76,8 @@ export function applyChromaKey(
     const g = data[i + 1];
     const b = data[i + 2];
 
-    // Improved green screen detection with better threshold
-    if (g > r * 1.1 && g > b * 1.1 && g > 45) {
+    // Modified green screen detection with lower thresholds
+    if (g > r * 1.02 && g > b * 1.02 && g > 10) {
       data[i + 3] = 0; // Make green pixels fully transparent
     }
     
