@@ -1,192 +1,113 @@
-import React, { useMemo, useState } from "react";
-import {
-  AvatarQuality,
-  ElevenLabsModel,
-  STTProvider,
-  VoiceEmotion,
-  StartAvatarRequest,
-  VoiceChatTransport,
-} from "@heygen/streaming-avatar";
-
-import { Input } from "../Input";
-import { Select } from "../Select";
-
-import { Field } from "./Field";
-
-import { AVATARS, STT_LANGUAGE_LIST } from "@/app/lib/constants";
+import React, { useEffect, useState, useRef } from "react";
+import { Button } from "../Button";
 
 interface AvatarConfigProps {
-  onConfigChange: (config: StartAvatarRequest) => void;
-  config: StartAvatarRequest;
+  onConfigChange: (config: any) => void;
+  isEnglish?: boolean;
 }
 
-export const AvatarConfig: React.FC<AvatarConfigProps> = ({
-  onConfigChange,
-  config,
-}) => {
-  const onChange = <T extends keyof StartAvatarRequest>(
-    key: T,
-    value: StartAvatarRequest[T],
-  ) => {
-    onConfigChange({ ...config, [key]: value });
-  };
-  const [showMore, setShowMore] = useState<boolean>(false);
+export const AvatarConfig: React.FC<AvatarConfigProps> = ({ onConfigChange, isEnglish = false }) => {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const selectedAvatar = useMemo(() => {
-    const avatar = AVATARS.find(
-      (avatar) => avatar.avatar_id === config.avatarName,
-    );
+  useEffect(() => {
+    // Only load config when isEnglish changes
+    const configData = {
+      knowledgeId: isEnglish 
+        ? process.env.NEXT_PUBLIC_EN_KNOWLEDGE_BASE_ID 
+        : process.env.NEXT_PUBLIC_TR_KNOWLEDGE_BASE_ID,
+      avatarName: process.env.NEXT_PUBLIC_AVATAR_ID,
+      language: isEnglish 
+        ? process.env.NEXT_PUBLIC_EN_LANGUAGE 
+        : process.env.NEXT_PUBLIC_TR_LANGUAGE,
+      quality: process.env.NEXT_PUBLIC_AVATAR_QUALITY,
+      voiceChatTransport: process.env.NEXT_PUBLIC_VOICE_CHAT_TRANSPORT,
+      voice: {
+        voiceId: process.env.NEXT_PUBLIC_CUSTOM_VOICE_ID,
+        emotion: process.env.NEXT_PUBLIC_VOICE_EMOTION,
+        model: process.env.NEXT_PUBLIC_ELEVENLABS_MODEL,
+      },
+      sttSettings: {
+        provider: process.env.NEXT_PUBLIC_STT_PROVIDER,
+      },
+    };
 
-    if (!avatar) {
-      return {
-        isCustom: true,
-        name: "Custom Avatar ID",
-        avatarId: null,
-      };
+    console.log('AvatarConfig - Loading configuration for:', isEnglish ? 'English' : 'Turkish', {
+      knowledgeId: configData.knowledgeId,
+      language: configData.language,
+      avatarName: configData.avatarName,
+      quality: configData.quality,
+      voiceChatTransport: configData.voiceChatTransport,
+      voice: configData.voice,
+      sttSettings: configData.sttSettings
+    });
+
+    onConfigChange(configData);
+  }, [onConfigChange, isEnglish]);
+
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+
+    if (!isFullscreen) {
+      if (containerRef.current.requestFullscreen) {
+        containerRef.current.requestFullscreen();
+      }
     } else {
-      return {
-        isCustom: false,
-        name: avatar.name,
-        avatarId: avatar.avatar_id,
-      };
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
     }
-  }, [config.avatarName]);
+    setIsFullscreen(!isFullscreen);
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
 
   return (
-    <div className="relative flex flex-col gap-4 w-[550px] py-8 max-h-full overflow-y-auto px-4">
-      <Field label="Custom Knowledge Base ID">
-        <Input
-          placeholder="Enter custom knowledge base ID"
-          value={config.knowledgeId}
-          onChange={(value) => onChange("knowledgeId", value)}
-        />
-      </Field>
-      <Field label="Avatar ID">
-        <Select
-          isSelected={(option) =>
-            typeof option === "string"
-              ? !!selectedAvatar?.isCustom
-              : option.avatar_id === selectedAvatar?.avatarId
-          }
-          options={[...AVATARS, "CUSTOM"]}
-          placeholder="Select Avatar"
-          renderOption={(option) => {
-            return typeof option === "string"
-              ? "Custom Avatar ID"
-              : option.name;
+    <div className="relative w-full h-full">
+      <div ref={containerRef} className="relative w-full h-full bg-black" style={{ aspectRatio: "16/9", maxWidth: "100%", maxHeight: "100%" }}>
+        <div className="absolute top-3 right-3 z-20">
+          <Button
+            className="!p-2 bg-zinc-700 bg-opacity-50"
+            onClick={toggleFullscreen}
+          >
+            {isFullscreen ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+              </svg>
+            )}
+          </Button>
+        </div>
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            position: "absolute",
+            top: 0,
+            left: 0,
           }}
-          value={
-            selectedAvatar?.isCustom ? "Custom Avatar ID" : selectedAvatar?.name
-          }
-          onSelect={(option) => {
-            if (typeof option === "string") {
-              onChange("avatarName", "");
-            } else {
-              onChange("avatarName", option.avatar_id);
-            }
-          }}
-        />
-      </Field>
-      {selectedAvatar?.isCustom && (
-        <Field label="Custom Avatar ID">
-          <Input
-            placeholder="Enter custom avatar ID"
-            value={config.avatarName}
-            onChange={(value) => onChange("avatarName", value)}
-          />
-        </Field>
-      )}
-      <Field label="Language">
-        <Select
-          isSelected={(option) => option.value === config.language}
-          options={STT_LANGUAGE_LIST}
-          renderOption={(option) => option.label}
-          value={
-            STT_LANGUAGE_LIST.find((option) => option.value === config.language)
-              ?.label
-          }
-          onSelect={(option) => onChange("language", option.value)}
-        />
-      </Field>
-      <Field label="Avatar Quality">
-        <Select
-          isSelected={(option) => option === config.quality}
-          options={Object.values(AvatarQuality)}
-          renderOption={(option) => option}
-          value={config.quality}
-          onSelect={(option) => onChange("quality", option)}
-        />
-      </Field>
-      <Field label="Voice Chat Transport">
-        <Select
-          isSelected={(option) => option === config.voiceChatTransport}
-          options={Object.values(VoiceChatTransport)}
-          renderOption={(option) => option}
-          value={config.voiceChatTransport}
-          onSelect={(option) => onChange("voiceChatTransport", option)}
-        />
-      </Field>
-      {showMore && (
-        <>
-          <h1 className="text-zinc-100 w-full text-center mt-5">
-            Voice Settings
-          </h1>
-          <Field label="Custom Voice ID">
-            <Input
-              placeholder="Enter custom voice ID"
-              value={config.voice?.voiceId}
-              onChange={(value) =>
-                onChange("voice", { ...config.voice, voiceId: value })
-              }
-            />
-          </Field>
-          <Field label="Emotion">
-            <Select
-              isSelected={(option) => option === config.voice?.emotion}
-              options={Object.values(VoiceEmotion)}
-              renderOption={(option) => option}
-              value={config.voice?.emotion}
-              onSelect={(option) =>
-                onChange("voice", { ...config.voice, emotion: option })
-              }
-            />
-          </Field>
-          <Field label="ElevenLabs Model">
-            <Select
-              isSelected={(option) => option === config.voice?.model}
-              options={Object.values(ElevenLabsModel)}
-              renderOption={(option) => option}
-              value={config.voice?.model}
-              onSelect={(option) =>
-                onChange("voice", { ...config.voice, model: option })
-              }
-            />
-          </Field>
-          <h1 className="text-zinc-100 w-full text-center mt-5">
-            STT Settings
-          </h1>
-          <Field label="Provider">
-            <Select
-              isSelected={(option) => option === config.sttSettings?.provider}
-              options={Object.values(STTProvider)}
-              renderOption={(option) => option}
-              value={config.sttSettings?.provider}
-              onSelect={(option) =>
-                onChange("sttSettings", {
-                  ...config.sttSettings,
-                  provider: option,
-                })
-              }
-            />
-          </Field>
-        </>
-      )}
-      <button
-        className="text-zinc-400 text-sm cursor-pointer w-full text-center bg-transparent"
-        onClick={() => setShowMore(!showMore)}
-      >
-        {showMore ? "Show less" : "Show more..."}
-      </button>
+        >
+          <source src="/loop.webm" type="video/webm" />
+          Your browser does not support the video tag.
+        </video>
+      </div>
     </div>
   );
 };

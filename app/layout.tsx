@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     template: `%s - HeyGen Interactive Avatar SDK Demo`,
   },
   icons: {
-    icon: "/heygen-logo.png",
+    icon: "/logo.png",
   },
 };
 
@@ -36,7 +36,7 @@ export default function RootLayout({
       lang="en"
     >
       <head />
-      <body className="min-h-screen bg-black text-white">
+      <body suppressHydrationWarning className="min-h-screen bg-black text-white">
         <main className="relative flex flex-col gap-6 h-screen w-screen">
           <NavBar />
           {children}
