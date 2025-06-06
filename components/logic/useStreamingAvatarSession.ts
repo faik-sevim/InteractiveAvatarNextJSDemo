@@ -47,6 +47,7 @@ export const useStreamingAvatarSession = () => {
 
   const handleStream = useCallback(
     ({ detail }: { detail: MediaStream }) => {
+      console.log("🟢 STREAM_READY - Setting session state to CONNECTED");
       setStream(detail);
       setSessionState(StreamingAvatarSessionState.CONNECTED);
     },
@@ -54,6 +55,9 @@ export const useStreamingAvatarSession = () => {
   );
 
   const stop = useCallback(async () => {
+    console.log("🔌 useStreamingAvatarSession.stop() called");
+    console.log("🔌 Current session state before stop:", sessionState);
+    
     avatarRef.current?.off(StreamingEvents.STREAM_READY, handleStream);
     avatarRef.current?.off(StreamingEvents.STREAM_DISCONNECTED, stop);
     clearMessages();
@@ -64,6 +68,7 @@ export const useStreamingAvatarSession = () => {
     setStream(null);
     await avatarRef.current?.stopAvatar();
     setSessionState(StreamingAvatarSessionState.INACTIVE);
+    console.log("🔌 Session state set to INACTIVE");
   }, [
     handleStream,
     setSessionState,
@@ -94,8 +99,13 @@ export const useStreamingAvatarSession = () => {
       }
 
       setSessionState(StreamingAvatarSessionState.CONNECTING);
+      console.log("🟡 Setting session state to CONNECTING");
+      
       avatarRef.current.on(StreamingEvents.STREAM_READY, handleStream);
       avatarRef.current.on(StreamingEvents.STREAM_DISCONNECTED, stop);
+      avatarRef.current.on(StreamingEvents.STREAM_DISCONNECTED, () => {
+        console.log("🔴 STREAM_DISCONNECTED event received - calling stop()");
+      });
       avatarRef.current.on(
         StreamingEvents.CONNECTION_QUALITY_CHANGED,
         ({ detail }: { detail: ConnectionQuality }) =>

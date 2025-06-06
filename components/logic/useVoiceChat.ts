@@ -35,15 +35,33 @@ export const useVoiceChat = () => {
   }, [avatarRef, setIsMuted, setIsVoiceChatActive]);
 
   const muteInputAudio = useCallback(() => {
-    if (!avatarRef.current) return;
+    console.log('🎤 muteInputAudio called');
+    console.log('🎤 avatarRef.current exists:', !!avatarRef.current);
+    
+    if (!avatarRef.current) {
+      console.log('❌ avatarRef.current is null - cannot mute');
+      return;
+    }
+    
+    console.log('🎤 Calling avatarRef.current.muteInputAudio()');
     avatarRef.current?.muteInputAudio();
     setIsMuted(true);
+    console.log('🎤 setIsMuted(true) completed, new isMuted state should be true');
   }, [avatarRef, setIsMuted]);
 
   const unmuteInputAudio = useCallback(() => {
-    if (!avatarRef.current) return;
+    console.log('🎤 unmuteInputAudio called');
+    console.log('🎤 avatarRef.current exists:', !!avatarRef.current);
+    
+    if (!avatarRef.current) {
+      console.log('❌ avatarRef.current is null - cannot unmute');
+      return;
+    }
+    
+    console.log('🎤 Calling avatarRef.current.unmuteInputAudio()');
     avatarRef.current?.unmuteInputAudio();
     setIsMuted(false);
+    console.log('🎤 setIsMuted(false) completed, new isMuted state should be false');
   }, [avatarRef, setIsMuted]);
 
   return {
