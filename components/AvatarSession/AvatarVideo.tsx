@@ -12,7 +12,7 @@ interface AvatarVideoProps {
   isEnglish?: boolean;
 }
 
-type VideoState = 'loop' | 'intro' | 'streaming' | 'ending';
+type VideoState = 'loop' | 'intro' | 'streaming' | 'ending' | 'error';
 
 // Video control utility for centralized management
 class VideoController {
@@ -35,6 +35,7 @@ class VideoController {
     intro: React.RefObject<HTMLVideoElement | null>;
     streaming: React.RefObject<HTMLVideoElement | null>;
     ending: React.RefObject<HTMLVideoElement | null>;
+    error: React.RefObject<HTMLVideoElement | null>;
   }) {
     this.log('🛑 Stopping all videos');
     
@@ -55,6 +56,7 @@ class VideoController {
     intro: React.RefObject<HTMLVideoElement | null>;
     streaming: React.RefObject<HTMLVideoElement | null>;
     ending: React.RefObject<HTMLVideoElement | null>;
+    error: React.RefObject<HTMLVideoElement | null>;
   }) {
     this.log(`🛑 Stopping all videos except ${exceptType}`);
     
@@ -87,6 +89,7 @@ class VideoController {
       intro: React.RefObject<HTMLVideoElement | null>;
       streaming: React.RefObject<HTMLVideoElement | null>;
       ending: React.RefObject<HTMLVideoElement | null>;
+      error: React.RefObject<HTMLVideoElement | null>;
     }
   ) {
     this.log(`🎬 Playing ${videoType} video`);
@@ -142,6 +145,9 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
   const [videoState, setVideoState] = useState<VideoState>('loop');
   const [endingLanguage, setEndingLanguage] = useState<string>(isEnglish ? 'en' : 'tr');
   const [isEndingVideoPlaying, setIsEndingVideoPlaying] = useState(false);
+  const [errorLanguage, setErrorLanguage] = useState<string>(isEnglish ? 'en' : 'tr');
+  const [isErrorVideoPlaying, setIsErrorVideoPlaying] = useState(false);
+  const [introLanguage, setIntroLanguage] = useState<string>(isEnglish ? 'en' : 'tr');
   
   // Video controller instance
   const videoController = useRef(new VideoController());
@@ -154,13 +160,15 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
   const introVideoRef = useRef<HTMLVideoElement>(null);
   const streamingVideoRef = useRef<HTMLVideoElement>(null);
   const endingVideoRef = useRef<HTMLVideoElement>(null);
+  const errorVideoRef = useRef<HTMLVideoElement>(null);
 
   // Centralized video refs object
   const videoRefs = {
     loop: loopVideoRef,
     intro: introVideoRef,
     streaming: streamingVideoRef,
-    ending: endingVideoRef
+    ending: endingVideoRef,
+    error: errorVideoRef
   };
 
   const isLoaded = sessionState === StreamingAvatarSessionState.CONNECTED;
@@ -204,6 +212,12 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
     videoController.current.log('📹 Ending video finished');
     setIsEndingVideoPlaying(false);
     handleVideoStateChange('loop', 'Ending video finished');
+  };
+
+  const handleErrorEnded = () => {
+    videoController.current.log('📹 Error video finished');
+    setIsErrorVideoPlaying(false);
+    handleVideoStateChange('loop', 'Error video finished');
   };
 
   const handleLoopEnded = () => {
@@ -270,10 +284,11 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
       if (isEndingVideoPlaying) {
         setIsEndingVideoPlaying(false);
       }
-      if (videoState !== 'intro') {
-        handleVideoStateChange('intro', 'Session connecting');
-      }
+      // Note: Intro video is now triggered immediately by session-starting event
+      // No need to trigger intro here since it's already playing from session start
+      controller.log('📋 Session connecting - intro should already be playing from session-starting event');
     } else if (sessionState === StreamingAvatarSessionState.CONNECTED) {
+      // Only switch to intro if we're still on loop (shouldn't happen now)
       if (videoState === 'loop') {
         handleVideoStateChange('intro', 'Session connected');
       }
@@ -309,6 +324,24 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
   // Event listeners for video transitions
   useEffect(() => {
     const controller = videoController.current;
+    
+    const handleSessionStarting = (event: CustomEvent) => {
+      controller.log(`🎬 Session starting: ${event.detail.language}`);
+      
+      // Immediately play intro video when session starts
+      setIntroLanguage(event.detail.language);
+      setEndingLanguage(event.detail.language);
+      setErrorLanguage(event.detail.language);
+      
+      // Reload intro video with new language
+      setTimeout(() => {
+        if (introVideoRef.current) {
+          introVideoRef.current.load();
+        }
+      }, 50);
+      
+      handleVideoStateChange('intro', 'Session starting - immediate intro');
+    };
     
     const handleAvatarStartTalking = () => {
       controller.log('🗣️ Avatar started talking');
@@ -364,14 +397,54 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
       }, 50);
     };
 
+    const handleSessionError = (event: CustomEvent) => {
+      controller.log(`🚨 Session error: ${event.detail.language} - ${event.detail.error}`);
+      
+      if (videoState === 'error' && isErrorVideoPlaying) {
+        return; // Already handling error
+      }
+      
+      // Stop any ongoing video processes
+      if (isEndingVideoPlaying && videoState !== 'error') {
+        setIsEndingVideoPlaying(false);
+      }
+      
+      setErrorLanguage(event.detail.language);
+      setIsErrorVideoPlaying(true);
+      
+      setTimeout(() => {
+        if (errorVideoRef.current) {
+          errorVideoRef.current.load();
+          
+          errorVideoRef.current.onloadeddata = () => {
+            handleVideoStateChange('error', `Session error (${event.detail.language})`);
+          };
+          
+          // Fallback
+          setTimeout(() => {
+            if (videoState !== 'error') {
+              handleVideoStateChange('error', `Session error fallback (${event.detail.language})`);
+            }
+          }, 200);
+        } else {
+          setIsErrorVideoPlaying(false);
+          handleVideoStateChange('loop', 'Error video unavailable');
+        }
+      }, 50);
+    };
+
+    window.addEventListener('session-starting', handleSessionStarting as EventListener);
     window.addEventListener('avatar-start-talking', handleAvatarStartTalking);
     window.addEventListener('session-ending', handleSessionEnding as EventListener);
+    window.addEventListener('session-error', handleSessionError as EventListener);
 
     return () => {
+      window.removeEventListener('session-starting', handleSessionStarting as EventListener);
       window.removeEventListener('avatar-start-talking', handleAvatarStartTalking);
       window.removeEventListener('session-ending', handleSessionEnding as EventListener);
+      window.removeEventListener('session-error', handleSessionError as EventListener);
     };
-  }, [videoState, isEndingVideoPlaying]);
+  }, [videoState, isEndingVideoPlaying, isErrorVideoPlaying]);
 
   // Handle streaming video ref forwarding
   useEffect(() => {
@@ -467,7 +540,7 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
               pointerEvents: videoState === 'intro' ? 'auto' : 'none',
               }}
             >
-              <source src={isEnglish ? "/intro_en.webm" : "/intro_tr.webm"} type="video/webm" />
+              <source src={`/intro_${introLanguage}.webm`} type="video/webm" />
               Your browser does not support the video tag.
             </video>
 
@@ -513,6 +586,30 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
             }}
           >
             <source src={`/ending_${endingLanguage}.webm`} type="video/webm" />
+            Your browser does not support the video tag.
+          </video>
+
+          {/* Error Video */}
+          <video
+            ref={errorVideoRef}
+            autoPlay={false}
+            muted={false}
+            playsInline
+            loop={false}
+            onEnded={handleErrorEnded}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              position: "absolute",
+              top: 0,
+              left: 0,
+              opacity: videoState === 'error' ? 1 : 0,
+              transition: "opacity 0.3s ease-in-out",
+              pointerEvents: videoState === 'error' ? 'auto' : 'none',
+            }}
+          >
+            <source src={`/error_${errorLanguage}.webm`} type="video/webm" />
             Your browser does not support the video tag.
           </video>
         </div>

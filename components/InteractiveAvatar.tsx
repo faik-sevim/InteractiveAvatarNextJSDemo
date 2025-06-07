@@ -176,6 +176,12 @@ function InteractiveAvatar() {
       setIsFirstTalk(true); // Reset first talk flag for new session
       console.log(`🔍 Language state set: isEnglish=${isEnglish} (${isEnglish ? 'English' : 'Turkish'})`);
       
+      // 🎬 INTRO VIDEO: Immediately trigger intro video when session starts
+      console.log('🎬 Triggering intro video immediately on session start');
+      window.dispatchEvent(new CustomEvent('session-starting', { 
+        detail: { language: isEnglish ? 'en' : 'tr' }
+      }));
+      
       const newToken = await fetchAccessToken();
       
       console.log('DEFAULT_CONFIG loaded from environment:', {
@@ -197,6 +203,9 @@ function InteractiveAvatar() {
         const timestamp = new Date().toLocaleTimeString();
         console.log(`[${timestamp}] 🗣️ Avatar started talking`, e);
         setIsAvatarCurrentlyTalking(true);
+        
+        // Set data attribute to track avatar talking state
+        document.body.setAttribute('data-avatar-talking', 'true');
         
         // Clear microphone unmute timer if avatar starts talking
         if (micUnmuteTimerRef.current) {
@@ -266,6 +275,9 @@ function InteractiveAvatar() {
         console.log(`[${timestamp}] 🛑 Avatar stopped talking:`, event);
         setIsAvatarCurrentlyTalking(false);
         
+        // Remove data attribute when avatar stops talking
+        document.body.removeAttribute('data-avatar-talking');
+        
         // 🎤 Start 0.5 second microphone unmute timer
         if (micUnmuteTimerRef.current) {
           clearTimeout(micUnmuteTimerRef.current);
@@ -328,6 +340,9 @@ function InteractiveAvatar() {
         setLastAvatarMessageTime(0);
         setIsAvatarCurrentlyTalking(false);
         setIsFirstTalk(true); // Reset for next session
+        
+        // Clear avatar talking data attribute
+        document.body.removeAttribute('data-avatar-talking');
         
         // Clear all timers on disconnect
         if (debounceTimerRef.current) {
@@ -393,6 +408,11 @@ function InteractiveAvatar() {
         language: isEnglish 
           ? process.env.NEXT_PUBLIC_EN_LANGUAGE 
           : process.env.NEXT_PUBLIC_TR_LANGUAGE,
+        voice: {
+          ...config.voice,
+          // Türkçe için biraz daha yavaş, İngilizce için biraz daha hızlı
+          rate: isEnglish ? 0.95 : 1.05
+        }
       };
 
       console.log('InteractiveAvatar - Starting session with config:', {
@@ -426,6 +446,16 @@ function InteractiveAvatar() {
       }
     } catch (error) {
       console.error("Error starting avatar session:", error);
+      
+      // 🚨 ERROR VIDEO: Dispatch error event to play error video
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.log('🚨 Dispatching session-error event for error video');
+      window.dispatchEvent(new CustomEvent('session-error', { 
+        detail: { 
+          language: isEnglish ? 'en' : 'tr',
+          error: errorMessage
+        }
+      }));
     }
   });
 
@@ -549,11 +579,11 @@ function InteractiveAvatar() {
         }, 100); // Small delay to ensure session is stopped
         
         countdownTimerRef.current = null;
-      }, 10000);
+      }, 5000);
       
       countdownTimerRef.current = timer;
       debounceTimerRef.current = null;
-      console.log("Started 10-second countdown timer. Timer ID:", timer);
+      console.log("Started 5-second countdown timer. Timer ID:", timer);
     }, 3000);
     
     console.log(`Started 3-second debounce timer from ${triggerSource}. Timer ID:`, debounceTimerRef.current);
@@ -582,9 +612,6 @@ function InteractiveAvatar() {
               </Button>
               <Button onClick={() => startSessionV2(true, true)}>
                 Start Voice Chat (EN)
-              </Button>
-              <Button onClick={() => startSessionV2(false)}>
-                Start Text Chat
               </Button>
             </div>
           ) : (

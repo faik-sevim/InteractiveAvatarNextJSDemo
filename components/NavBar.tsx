@@ -5,54 +5,41 @@ import Link from "next/link";
 import { GithubIcon, HeyGenLogo } from "./Icons";
 
 export default function NavBar() {
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/logout', {
+        method: 'POST',
+      });
+      // Redirect to login page
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Force redirect even if logout API fails
+      window.location.href = '/login';
+    }
+  };
+
   return (
     <>
       <div className="flex flex-row justify-between items-center w-[1000px] m-auto p-6">
         <div className="flex flex-row items-center gap-4">
-          <Link href="https://app.heygen.com/" target="_blank">
-            <HeyGenLogo />
-          </Link>
           <div className="bg-gradient-to-br from-sky-300 to-indigo-500 bg-clip-text">
             <p className="text-xl font-semibold text-transparent">
-              HeyGen Interactive Avatar SDK NextJS Demo
+              Sui-d Interactive Avatar
             </p>
           </div>
         </div>
-        <div className="flex flex-row items-center gap-6">
-          <Link
-            href="https://labs.heygen.com/interactive-avatar"
-            target="_blank"
-          >
-            Avatars
-          </Link>
-          <Link
-            href="https://docs.heygen.com/reference/list-voices-v2"
-            target="_blank"
-          >
-            Voices
-          </Link>
-          <Link
-            href="https://docs.heygen.com/reference/new-session-copy"
-            target="_blank"
-          >
-            API Docs
-          </Link>
-          <Link
-            href="https://help.heygen.com/en/articles/9182113-interactive-avatar-101-your-ultimate-guide"
-            target="_blank"
-          >
-            Guide
-          </Link>
-          <Link
-            aria-label="Github"
-            className="flex flex-row justify-center gap-1 text-foreground"
-            href="https://github.com/HeyGen-Official/StreamingAvatarSDK"
-            target="_blank"
-          >
-            <GithubIcon className="text-default-500" />
-            SDK
-          </Link>
-        </div>
+        
+        {/* Logout button */}
+        <button
+          onClick={handleLogout}
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center gap-2 text-sm"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          Logout
+        </button>
       </div>
     </>
   );

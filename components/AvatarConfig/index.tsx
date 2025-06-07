@@ -22,11 +22,6 @@ export const AvatarConfig: React.FC<AvatarConfigProps> = ({ onConfigChange, isEn
         : process.env.NEXT_PUBLIC_TR_LANGUAGE,
       quality: process.env.NEXT_PUBLIC_AVATAR_QUALITY,
       voiceChatTransport: process.env.NEXT_PUBLIC_VOICE_CHAT_TRANSPORT,
-      voice: {
-        voiceId: process.env.NEXT_PUBLIC_CUSTOM_VOICE_ID,
-        emotion: process.env.NEXT_PUBLIC_VOICE_EMOTION,
-        model: process.env.NEXT_PUBLIC_ELEVENLABS_MODEL,
-      },
       sttSettings: {
         provider: process.env.NEXT_PUBLIC_STT_PROVIDER,
       },
@@ -38,7 +33,6 @@ export const AvatarConfig: React.FC<AvatarConfigProps> = ({ onConfigChange, isEn
       avatarName: configData.avatarName,
       quality: configData.quality,
       voiceChatTransport: configData.voiceChatTransport,
-      voice: configData.voice,
       sttSettings: configData.sttSettings
     });
 

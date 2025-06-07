@@ -59,7 +59,7 @@ export const useStreamingAvatarSession = () => {
     console.log("🔌 Current session state before stop:", sessionState);
     
     avatarRef.current?.off(StreamingEvents.STREAM_READY, handleStream);
-    avatarRef.current?.off(StreamingEvents.STREAM_DISCONNECTED, stop);
+    // Note: handleStreamDisconnected is defined locally in start function
     clearMessages();
     stopVoiceChat();
     setIsListening(false);
@@ -102,10 +102,33 @@ export const useStreamingAvatarSession = () => {
       console.log("🟡 Setting session state to CONNECTING");
       
       avatarRef.current.on(StreamingEvents.STREAM_READY, handleStream);
-      avatarRef.current.on(StreamingEvents.STREAM_DISCONNECTED, stop);
-      avatarRef.current.on(StreamingEvents.STREAM_DISCONNECTED, () => {
-        console.log("🔴 STREAM_DISCONNECTED event received - calling stop()");
-      });
+      const handleStreamDisconnected = () => {
+        console.log("🔴 STREAM_DISCONNECTED event received");
+        
+        // Check if this is a premature disconnection during avatar talking
+        const avatarStillTalking = document.body.getAttribute('data-avatar-talking') === 'true';
+        if (avatarStillTalking) {
+          console.log("⚠️  STREAM_DISCONNECTED while avatar still talking - delaying stop()");
+          // Delay the stop to allow avatar to finish current speech
+          setTimeout(() => {
+            console.log("🔴 Delayed stop() execution after avatar talking check");
+            // Double check avatar is no longer talking before stopping
+            const stillTalking = document.body.getAttribute('data-avatar-talking') === 'true';
+            if (!stillTalking) {
+              stop();
+            } else {
+              console.log("🔴 Avatar still talking after delay - forcing stop()");
+              document.body.removeAttribute('data-avatar-talking');
+              stop();
+            }
+          }, 3000);
+        } else {
+          console.log("🔴 Normal STREAM_DISCONNECTED - calling stop() immediately");
+          stop();
+        }
+      };
+      
+      avatarRef.current.on(StreamingEvents.STREAM_DISCONNECTED, handleStreamDisconnected);
       avatarRef.current.on(
         StreamingEvents.CONNECTION_QUALITY_CHANGED,
         ({ detail }: { detail: ConnectionQuality }) =>

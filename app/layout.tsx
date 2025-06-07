@@ -2,7 +2,7 @@ import "@/styles/globals.css";
 import { Metadata } from "next";
 import { Fira_Code as FontMono, Inter as FontSans } from "next/font/google";
 
-import NavBar from "@/components/NavBar";
+import ConditionalNavBar from "@/components/ConditionalNavBar";
 
 const fontSans = FontSans({
   subsets: ["latin"],
@@ -16,8 +16,8 @@ const fontMono = FontMono({
 
 export const metadata: Metadata = {
   title: {
-    default: "HeyGen Interactive Avatar SDK Demo",
-    template: `%s - HeyGen Interactive Avatar SDK Demo`,
+    default: "Sui-d Interactive Avatar",
+    template: `%s - Sui-d Interactive Avatar`,
   },
   icons: {
     icon: "/logo.png",
@@ -38,7 +38,7 @@ export default function RootLayout({
       <head />
       <body suppressHydrationWarning className="min-h-screen bg-black text-white">
         <main className="relative flex flex-col gap-6 h-screen w-screen">
-          <NavBar />
+          <ConditionalNavBar />
           {children}
         </main>
       </body>
