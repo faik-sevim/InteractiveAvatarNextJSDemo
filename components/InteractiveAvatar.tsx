@@ -15,6 +15,7 @@ import { AvatarVideo } from "./AvatarSession/AvatarVideo";
 import { useStreamingAvatarSession } from "./logic/useStreamingAvatarSession";
 import { AvatarControls } from "./AvatarSession/AvatarControls";
 import { useVoiceChat } from "./logic/useVoiceChat";
+import { useAudioMonitor } from "./logic/useAudioMonitor";
 import { StreamingAvatarProvider, StreamingAvatarSessionState } from "./logic";
 import { LoadingIcon } from "./Icons";
 import { MessageHistory } from "./AvatarSession/MessageHistory";
@@ -112,22 +113,17 @@ async function closeAllActiveSessions(token: string) {
 function InteractiveAvatar() {
   const { initAvatar, startAvatar, stopAvatar, avatarRef, sessionState, stream } =
     useStreamingAvatarSession();
-  const { startVoiceChat, muteInputAudio, unmuteInputAudio } = useVoiceChat();
+  const { startVoiceChat } = useVoiceChat();
+  const { startMonitoring, stopMonitoring } = useAudioMonitor();
 
   const [config, setConfig] = useState<StartAvatarRequest>(DEFAULT_CONFIG);
   const [isEnglish, setIsEnglish] = useState(false);
   const [lastAvatarMessageTime, setLastAvatarMessageTime] = useState<number>(0);
-  const [isAvatarCurrentlyTalking, setIsAvatarCurrentlyTalking] = useState(false);
 
   const mediaStream = useRef<HTMLVideoElement>(null);
-  const [lastClickTime, setLastClickTime] = useState<number>(0);
   const [middleClickTimer, setMiddleClickTimer] = useState<NodeJS.Timeout | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // New microphone control state
-  const [isFirstTalk, setIsFirstTalk] = useState(true);
-  const micUnmuteTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   async function fetchAccessToken() {
     try {
@@ -173,7 +169,7 @@ function InteractiveAvatar() {
     try {
       console.log(`🌐 START SESSION: isVoiceChat=${isVoiceChat}, isEnglish=${isEnglish}`);
       setIsEnglish(isEnglish);
-      setIsFirstTalk(true); // Reset first talk flag for new session
+
       console.log(`🔍 Language state set: isEnglish=${isEnglish} (${isEnglish ? 'English' : 'Turkish'})`);
       
       // 🎬 INTRO VIDEO: Immediately trigger intro video when session starts
@@ -198,30 +194,9 @@ function InteractiveAvatar() {
       
       const avatar = initAvatar(newToken);
 
-      // 🎤 NEW MICROPHONE CONTROL SYSTEM
       avatar.on(StreamingEvents.AVATAR_START_TALKING, (e) => {
         const timestamp = new Date().toLocaleTimeString();
         console.log(`[${timestamp}] 🗣️ Avatar started talking`, e);
-        setIsAvatarCurrentlyTalking(true);
-        
-        // Set data attribute to track avatar talking state
-        document.body.setAttribute('data-avatar-talking', 'true');
-        
-        // Clear microphone unmute timer if avatar starts talking
-        if (micUnmuteTimerRef.current) {
-          clearTimeout(micUnmuteTimerRef.current);
-          micUnmuteTimerRef.current = null;
-          console.log("🎤 Microphone unmute timer cleared - avatar started talking");
-        }
-        
-        // Only mute on FIRST avatar talk
-        if (isFirstTalk) {
-          console.log("🎤 First avatar talk detected - muting microphone");
-          muteInputAudio(); // Simulate button click
-          setIsFirstTalk(false);
-        } else {
-          console.log("🎤 Subsequent avatar talk - microphone already managed");
-        }
         
         // Clear session ending timers if avatar starts talking
         if (debounceTimerRef.current) {
@@ -242,13 +217,6 @@ function InteractiveAvatar() {
       avatar.on(StreamingEvents.AVATAR_TALKING_MESSAGE, (event) => {
         console.log(">>>>> Avatar talking message:", event);
         setLastAvatarMessageTime(Date.now());
-        
-        // Clear microphone unmute timer if avatar is actively talking
-        if (micUnmuteTimerRef.current) {
-          clearTimeout(micUnmuteTimerRef.current);
-          micUnmuteTimerRef.current = null;
-          console.log("🎤 Microphone unmute timer cleared - avatar actively talking");
-        }
         
         // CRITICAL: Clear any existing session ending timers when avatar is actively talking
         let clearedTimers = false;
@@ -273,35 +241,9 @@ function InteractiveAvatar() {
       avatar.on(StreamingEvents.AVATAR_STOP_TALKING, (event) => {
         const timestamp = new Date().toLocaleTimeString();
         console.log(`[${timestamp}] 🛑 Avatar stopped talking:`, event);
-        setIsAvatarCurrentlyTalking(false);
         
-        // Remove data attribute when avatar stops talking
-        document.body.removeAttribute('data-avatar-talking');
-        
-        // 🎤 Start 0.5 second microphone unmute timer
-        if (micUnmuteTimerRef.current) {
-          clearTimeout(micUnmuteTimerRef.current);
-        }
-        
-        console.log("🎤 Avatar stopped talking - starting 0.5s unmute timer");
-        micUnmuteTimerRef.current = setTimeout(() => {
-          console.log("🎤 0.5s unmute timer completed - checking conditions");
-          console.log("🎤 Avatar ref exists:", !!avatarRef.current);
-          console.log("🎤 Avatar currently talking:", isAvatarCurrentlyTalking);
-          
-          // Only check if avatar is still talking, not session state
-          if (!isAvatarCurrentlyTalking) {
-            console.log("🎤 Avatar not talking - unmuting microphone");
-            unmuteInputAudio();
-          } else {
-            console.log("🎤 Avatar still talking - skipping unmute");
-          }
-          
-          micUnmuteTimerRef.current = null;
-        }, 500);
-        
-        // Session ending logic - now this is the ONLY place countdown starts
-        console.log(`🔚 Avatar stopped talking - this is where countdown should start`);
+        // Session ending logic - start countdown when avatar stops talking
+        console.log(`🔚 Avatar stopped talking - starting countdown sequence`);
         const timeSinceLastMessage = Date.now() - lastAvatarMessageTime;
         console.log(`🔚 Time since last message: ${timeSinceLastMessage}ms`);
         
@@ -312,25 +254,6 @@ function InteractiveAvatar() {
       
       avatar.on(StreamingEvents.AVATAR_END_MESSAGE, (event) => {
         console.log(">>>>> Avatar end message:", event);
-        // DON'T set isAvatarCurrentlyTalking to false here!
-        // Avatar might still be physically speaking even though message stream ended
-        
-        // Clear microphone unmute timer since we'll wait for AVATAR_STOP_TALKING
-        if (micUnmuteTimerRef.current) {
-          clearTimeout(micUnmuteTimerRef.current);
-          micUnmuteTimerRef.current = null;
-          console.log("🎤 Microphone unmute timer cleared - avatar ended message, waiting for stop talking");
-        }
-        
-        console.log("🎤 Avatar ended message - will wait for AVATAR_STOP_TALKING for unmute");
-        console.log("🎤 Session state:", sessionState);
-        console.log("🎤 Avatar currently talking:", isAvatarCurrentlyTalking);
-        
-        // Don't unmute here! Wait for AVATAR_STOP_TALKING
-        console.log("🎤 NOT unmuting - waiting for AVATAR_STOP_TALKING event");
-        
-        // CRITICAL: Don't start countdown here! Avatar might still be talking
-        // Only AVATAR_STOP_TALKING guarantees avatar has actually stopped
         console.log("🚫 NOT starting countdown - waiting for AVATAR_STOP_TALKING to confirm avatar stopped");
       });
       
@@ -338,11 +261,6 @@ function InteractiveAvatar() {
         console.log("🔌 Stream disconnected");
         console.log("🔌 Session state before cleanup:", sessionState);
         setLastAvatarMessageTime(0);
-        setIsAvatarCurrentlyTalking(false);
-        setIsFirstTalk(true); // Reset for next session
-        
-        // Clear avatar talking data attribute
-        document.body.removeAttribute('data-avatar-talking');
         
         // Clear all timers on disconnect
         if (debounceTimerRef.current) {
@@ -353,11 +271,11 @@ function InteractiveAvatar() {
           clearTimeout(countdownTimerRef.current);
           countdownTimerRef.current = null;
         }
-        if (micUnmuteTimerRef.current) {
-          clearTimeout(micUnmuteTimerRef.current);
-          micUnmuteTimerRef.current = null;
-        }
-        console.log("🔌 Stream disconnected - all timers cleared");
+        
+        // Stop audio monitoring when stream disconnects
+        stopMonitoring();
+        
+        console.log("🔌 Stream disconnected - all timers cleared and audio monitoring stopped");
       });
       
       avatar.on(StreamingEvents.STREAM_READY, (event) => {
@@ -366,13 +284,6 @@ function InteractiveAvatar() {
       
       avatar.on(StreamingEvents.USER_START, (event) => {
         console.log(">>>>> User started talking:", event);
-        
-        // Clear microphone unmute timer if user starts talking
-        if (micUnmuteTimerRef.current) {
-          clearTimeout(micUnmuteTimerRef.current);
-          micUnmuteTimerRef.current = null;
-          console.log("🎤 Microphone unmute timer cleared - user started talking");
-        }
         
         // Clear session ending timers if user starts talking
         if (debounceTimerRef.current) {
@@ -434,15 +345,16 @@ function InteractiveAvatar() {
         NEXT_PUBLIC_TR_LANGUAGE: process.env.NEXT_PUBLIC_TR_LANGUAGE,
       });
 
-      // Reset microphone control state for new session
-      setIsFirstTalk(true);
-      setIsAvatarCurrentlyTalking(false);
-      console.log("🎤 Session starting - reset isFirstTalk to true");
-
       await startAvatar(updatedConfig);
 
       if (isVoiceChat) {
         await startVoiceChat();
+        
+        // Start audio monitoring after voice chat is started
+        if (mediaStream.current) {
+          console.log("🎧 Starting audio monitoring for automatic microphone control");
+          startMonitoring(mediaStream.current);
+        }
       }
     } catch (error) {
       console.error("Error starting avatar session:", error);
@@ -490,12 +402,10 @@ function InteractiveAvatar() {
     if (countdownTimerRef.current) {
       clearTimeout(countdownTimerRef.current);
     }
-    if (micUnmuteTimerRef.current) {
-      clearTimeout(micUnmuteTimerRef.current);
-    }
     if (middleClickTimer) {
       clearTimeout(middleClickTimer);
     }
+    stopMonitoring();
     stopAvatar();
   });
 
@@ -511,21 +421,19 @@ function InteractiveAvatar() {
       mediaStream.current.onloadedmetadata = () => {
         console.log('Stream metadata loaded, playing video');
         mediaStream.current!.play();
+        
+        // Start audio monitoring when stream is ready and playing
+        console.log("🎧 Starting audio monitoring after stream is ready");
+        startMonitoring(mediaStream.current!);
       };
     } else {
       console.log('Stream or mediaStream.current not available:', { stream: !!stream, mediaStreamRef: !!mediaStream.current });
     }
-  }, [mediaStream, stream]);
+  }, [mediaStream, stream, startMonitoring]);
 
   // Centralized countdown function
   const startCountdownSequence = (triggerSource: string) => {
     console.log(`Starting countdown sequence from: ${triggerSource}`);
-    
-    // CRITICAL: Only start countdown if BOTH avatar and user are not talking
-    if (isAvatarCurrentlyTalking) {
-      console.log(`🚫 Avatar is still talking - NOT starting countdown from ${triggerSource}`);
-      return;
-    }
     
     // CRITICAL: Clear ALL existing timers first to prevent conflicts
     if (debounceTimerRef.current) {
@@ -539,16 +447,16 @@ function InteractiveAvatar() {
       countdownTimerRef.current = null;
     }
     
-    console.log(`✅ Both avatar and user are quiet - starting countdown from ${triggerSource}`);
+    console.log(`✅ Starting countdown from ${triggerSource}`);
     
     // Start fresh debounce timer
     debounceTimerRef.current = setTimeout(() => {
-      // Double check: ensure no recent avatar messages AND avatar not currently talking
+      // Double check: ensure no recent avatar messages
       const timeSinceLastMessage = Date.now() - lastAvatarMessageTime;
-      console.log(`Debounce timer fired: timeSinceLastMessage=${timeSinceLastMessage}ms, isAvatarCurrentlyTalking=${isAvatarCurrentlyTalking}`);
+      console.log(`Debounce timer fired: timeSinceLastMessage=${timeSinceLastMessage}ms`);
       
-      if (timeSinceLastMessage < 2000 || isAvatarCurrentlyTalking) {
-        console.log("Avatar still active or talking, restarting debounce");
+      if (timeSinceLastMessage < 2000) {
+        console.log("Avatar still active, restarting debounce");
         return;
       }
       
@@ -556,14 +464,7 @@ function InteractiveAvatar() {
       
       // Start the main countdown timer
       const timer = setTimeout(() => {
-        // Final check before ending session
-        if (isAvatarCurrentlyTalking) {
-          console.log("🚫 Avatar started talking during countdown - cancelling session end");
-          countdownTimerRef.current = null;
-          return;
-        }
-        
-        console.log("10-second countdown completed - ending session and playing ending video");
+        console.log("5-second countdown completed - ending session and playing ending video");
         console.log(`🔍 DEBUG: isEnglish=${isEnglish}, sending language=${isEnglish ? 'en' : 'tr'}`);
         
         // First: Stop the avatar session
