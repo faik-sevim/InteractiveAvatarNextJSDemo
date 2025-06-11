@@ -61,7 +61,19 @@ async function listActiveSessions() {
 
     const data = await response.json();
     console.log("Active sessions:", data);
-    return data.sessions || [];
+    
+    // Handle HeyGen API response structure: {code: 100, data: {sessions: []}, message: 'success'}
+    if (data.data && data.data.sessions) {
+      console.log(`🔍 API Response: Found ${data.data.sessions.length} sessions in data.data.sessions`);
+      return data.data.sessions;
+    } else if (data.sessions) {
+      console.log(`🔍 API Response: Found ${data.sessions.length} sessions in data.sessions`);
+      return data.sessions;
+    } else {
+      console.log("🔍 API Response: No sessions found in expected structure");
+      console.log("🔍 Full response structure:", JSON.stringify(data, null, 2));
+      return [];
+    }
   } catch (error) {
     console.error("Error listing active sessions:", error);
     console.warn("Continuing with session start despite session list error");
@@ -69,12 +81,11 @@ async function listActiveSessions() {
   }
 }
 
-async function closeSession(token: string, sessionId: string) {
+async function closeSession(sessionId: string) {
   try {
     const response = await fetch("/api/close-session", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ session_id: sessionId }),
@@ -93,19 +104,140 @@ async function closeSession(token: string, sessionId: string) {
   }
 }
 
-async function closeAllActiveSessions(token: string) {
+async function closeAllActiveSessions() {
+  console.log("🔍 ======= ROBUST SESSION CLEANUP START =======");
+  
   try {
+    // Step 1: List all active sessions
     const sessions = await listActiveSessions();
-    console.log(`Found ${sessions.length} active sessions`);
-
-    for (const session of sessions) {
-      console.log(`Closing session ${session.session_id} (status: ${session.status})`);
-      await closeSession(token, session.session_id);
+    console.log(`📋 Found ${sessions.length} active sessions`);
+    
+    if (sessions.length === 0) {
+      console.log("✅ No active sessions found - cleanup complete");
+      return;
     }
 
-    console.log("All active sessions closed");
+    // Step 2: Display all sessions in console
+    console.log("📝 Active Sessions Details:");
+    sessions.forEach((session: any, index: number) => {
+      console.log(`  [${index + 1}] Session ID: ${session.session_id}`);
+      console.log(`      Status: ${session.status}`);
+      console.log(`      Created: ${new Date(session.created_at * 1000).toLocaleString()}`);
+      console.log(`      Age: ${Math.floor((Date.now() / 1000 - session.created_at) / 60)} minutes`);
+    });
+
+    // Step 3: Close all sessions with regular close
+    console.log("🔄 Attempting to close all sessions...");
+    const closeResults = [];
+    
+    for (const session of sessions) {
+      try {
+        console.log(`⏳ Closing session ${session.session_id} (status: ${session.status})`);
+        await closeSession(session.session_id);
+        closeResults.push({ sessionId: session.session_id, result: 'success' });
+        console.log(`✅ Successfully closed session ${session.session_id}`);
+      } catch (error) {
+        console.error(`❌ Failed to close session ${session.session_id}:`, error);
+        closeResults.push({ sessionId: session.session_id, result: 'failed', error });
+      }
+    }
+
+    // Step 4: Wait a moment for sessions to actually close
+    console.log("⏳ Waiting 2 seconds for sessions to close...");
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Step 5: Check for remaining sessions
+    console.log("🔍 Checking for remaining sessions...");
+    const remainingSessions = await listActiveSessions();
+    
+    if (remainingSessions.length === 0) {
+      console.log("✅ All sessions successfully closed!");
+      console.log("🔍 ======= ROBUST SESSION CLEANUP COMPLETE =======");
+      return;
+    }
+
+    // Step 6: HARDCLOSE remaining sessions
+    console.log(`⚠️  Found ${remainingSessions.length} remaining sessions - initiating HARDCLOSE`);
+    console.log("💀 HARDCLOSE Sessions Details:");
+    remainingSessions.forEach((session: any, index: number) => {
+      console.log(`  [${index + 1}] REMAINING Session ID: ${session.session_id}`);
+      console.log(`      Status: ${session.status}`);
+      console.log(`      Created: ${new Date(session.created_at * 1000).toLocaleString()}`);
+    });
+
+    // Step 7: Force close remaining sessions
+    const hardCloseResults = [];
+    
+    for (const session of remainingSessions) {
+      try {
+        console.log(`💀 HARDCLOSE attempt for session ${session.session_id}`);
+        await hardCloseSession(session.session_id);
+        hardCloseResults.push({ sessionId: session.session_id, result: 'hardclose-success' });
+        console.log(`💀✅ HARDCLOSE successful for session ${session.session_id}`);
+      } catch (error) {
+        console.error(`💀❌ HARDCLOSE failed for session ${session.session_id}:`, error);
+        hardCloseResults.push({ sessionId: session.session_id, result: 'hardclose-failed', error });
+      }
+    }
+
+    // Step 8: Final verification
+    console.log("⏳ Waiting 3 seconds after HARDCLOSE...");
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    const finalCheck = await listActiveSessions();
+    
+    if (finalCheck.length === 0) {
+      console.log("💀✅ HARDCLOSE successful - all sessions terminated!");
+    } else {
+      console.log(`💀⚠️  WARNING: ${finalCheck.length} sessions still remain after HARDCLOSE`);
+      finalCheck.forEach((session: any, index: number) => {
+        console.log(`  [${index + 1}] STUBBORN Session ID: ${session.session_id} (status: ${session.status})`);
+      });
+    }
+
+    // Step 9: Summary report
+    console.log("📊 SESSION CLEANUP SUMMARY:");
+    console.log(`  📋 Initial sessions found: ${sessions.length}`);
+    console.log(`  ✅ Regular close successful: ${closeResults.filter(r => r.result === 'success').length}`);
+    console.log(`  ❌ Regular close failed: ${closeResults.filter(r => r.result === 'failed').length}`);
+    console.log(`  💀 HARDCLOSE attempted: ${remainingSessions.length}`);
+    console.log(`  💀✅ HARDCLOSE successful: ${hardCloseResults.filter(r => r.result === 'hardclose-success').length}`);
+    console.log(`  💀❌ HARDCLOSE failed: ${hardCloseResults.filter(r => r.result === 'hardclose-failed').length}`);
+    console.log(`  🔍 Final remaining sessions: ${finalCheck.length}`);
+    
+    console.log("🔍 ======= ROBUST SESSION CLEANUP COMPLETE =======");
+
   } catch (error) {
-    console.error("Error closing all active sessions:", error);
+    console.error("🚨 CRITICAL ERROR in robust session cleanup:", error);
+    console.log("🔍 ======= ROBUST SESSION CLEANUP FAILED =======");
+    throw error;
+  }
+}
+
+async function hardCloseSession(sessionId: string) {
+  try {
+    // First try the regular close endpoint with force parameter
+    const response = await fetch("/api/hardclose-session", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ 
+        session_id: sessionId,
+        force: true 
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HARDCLOSE failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log(`💀 HARDCLOSE result for ${sessionId}:`, data);
+    return data;
+    
+  } catch (error) {
+    console.error(`💀 HARDCLOSE error for session ${sessionId}:`, error);
     throw error;
   }
 }
@@ -190,13 +322,17 @@ function InteractiveAvatar() {
       
       // Close all active sessions before starting a new one
       console.log("Checking for active sessions before starting new session...");
-      await closeAllActiveSessions(newToken);
+      await closeAllActiveSessions();
       
       const avatar = initAvatar(newToken);
 
       avatar.on(StreamingEvents.AVATAR_START_TALKING, (e) => {
         const timestamp = new Date().toLocaleTimeString();
         console.log(`[${timestamp}] 🗣️ Avatar started talking`, e);
+        
+        // FALLBACK: Set lastAvatarMessageTime when avatar starts talking (for EN knowledge base)
+        setLastAvatarMessageTime(Date.now());
+        console.log(`🔄 FALLBACK: Set lastAvatarMessageTime on AVATAR_START_TALKING for EN compatibility`);
         
         // Clear session ending timers if avatar starts talking
         if (debounceTimerRef.current) {
@@ -217,6 +353,7 @@ function InteractiveAvatar() {
       avatar.on(StreamingEvents.AVATAR_TALKING_MESSAGE, (event) => {
         console.log(">>>>> Avatar talking message:", event);
         setLastAvatarMessageTime(Date.now());
+        console.log(`🔄 NORMAL: Set lastAvatarMessageTime on AVATAR_TALKING_MESSAGE`);
         
         // CRITICAL: Clear any existing session ending timers when avatar is actively talking
         let clearedTimers = false;
@@ -241,6 +378,10 @@ function InteractiveAvatar() {
       avatar.on(StreamingEvents.AVATAR_STOP_TALKING, (event) => {
         const timestamp = new Date().toLocaleTimeString();
         console.log(`[${timestamp}] 🛑 Avatar stopped talking:`, event);
+        
+        // FALLBACK: Update lastAvatarMessageTime when avatar stops talking (for EN knowledge base)
+        setLastAvatarMessageTime(Date.now());
+        console.log(`🔄 FALLBACK: Updated lastAvatarMessageTime on AVATAR_STOP_TALKING for EN compatibility`);
         
         // Session ending logic - start countdown when avatar stops talking
         console.log(`🔚 Avatar stopped talking - starting countdown sequence`);
@@ -425,6 +566,12 @@ function InteractiveAvatar() {
         // Start audio monitoring when stream is ready and playing
         console.log("🎧 Starting audio monitoring after stream is ready");
         startMonitoring(mediaStream.current!);
+        
+        // 🚨 CRITICAL FIX: Force video to switch to streaming state
+        console.log("🎬 FORCING video switch to streaming state - stream is ready");
+        setTimeout(() => {
+          window.dispatchEvent(new Event('avatar-start-talking'));
+        }, 500); // Small delay to ensure video is playing
       };
     } else {
       console.log('Stream or mediaStream.current not available:', { stream: !!stream, mediaStreamRef: !!mediaStream.current });
@@ -452,12 +599,19 @@ function InteractiveAvatar() {
     // Start fresh debounce timer
     debounceTimerRef.current = setTimeout(() => {
       // Double check: ensure no recent avatar messages
-      const timeSinceLastMessage = Date.now() - lastAvatarMessageTime;
+      const currentTime = Date.now();
+      const timeSinceLastMessage = currentTime - lastAvatarMessageTime;
       console.log(`Debounce timer fired: timeSinceLastMessage=${timeSinceLastMessage}ms`);
+      console.log(`Debug: currentTime=${currentTime}, lastAvatarMessageTime=${lastAvatarMessageTime}`);
       
-      if (timeSinceLastMessage < 2000) {
-        console.log("Avatar still active, restarting debounce");
+      // IMPROVED: Handle case where lastAvatarMessageTime is 0 or unreliable
+      const isReliableTimestamp = lastAvatarMessageTime > 0 && lastAvatarMessageTime < currentTime;
+      
+      if (isReliableTimestamp && timeSinceLastMessage < 2000) {
+        console.log("Avatar still active based on reliable timestamp, restarting debounce");
         return;
+      } else if (!isReliableTimestamp) {
+        console.log(`⚠️ Unreliable timestamp detected (lastAvatarMessageTime=${lastAvatarMessageTime}), proceeding with countdown`);
       }
       
       console.log("Avatar appears to be finished (3 seconds after message end). Starting countdown...");

@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    const token = request.headers.get('authorization')?.split(' ')[1];
-    
-    if (!token) {
-      return NextResponse.json({ error: 'No token provided' }, { status: 401 });
+    // Get API key from environment variables (like list-sessions does)
+    const apiKey = process.env.HEYGEN_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ error: 'API key not found' }, { status: 401 });
     }
 
     const { session_id } = await request.json();
@@ -14,11 +14,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No session ID provided' }, { status: 400 });
     }
 
+    // Use the official HeyGen API documentation format
     const response = await fetch('https://api.heygen.com/v1/streaming.stop', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'x-api-key': apiKey
       },
       body: JSON.stringify({ session_id }),
     });

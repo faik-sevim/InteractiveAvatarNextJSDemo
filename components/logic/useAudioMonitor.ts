@@ -8,9 +8,9 @@ interface AudioMonitorConfig {
 }
 
 const DEFAULT_CONFIG: AudioMonitorConfig = {
-  volumeThreshold: 10, // 10%
+  volumeThreshold: 13, // 10%
   checkInterval: 100, // 100ms
-  sustainDuration: 200, // 0.2 second
+  sustainDuration: 100, // 0.5 second
 };
 
 export const useAudioMonitor = (config: Partial<AudioMonitorConfig> = {}) => {

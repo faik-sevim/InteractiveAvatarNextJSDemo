@@ -288,9 +288,11 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
       // No need to trigger intro here since it's already playing from session start
       controller.log('📋 Session connecting - intro should already be playing from session-starting event');
     } else if (sessionState === StreamingAvatarSessionState.CONNECTED) {
-      // Only switch to intro if we're still on loop (shouldn't happen now)
-      if (videoState === 'loop') {
-        handleVideoStateChange('intro', 'Session connected');
+      // 🚨 EMERGENCY FIX: Force switch to streaming when connected
+      console.log(`🚨 EMERGENCY: Session connected, current video state: ${videoState}`);
+      if (videoState !== 'streaming') {
+        console.log("🚨 FORCING switch to streaming video - session is connected");
+        handleVideoStateChange('streaming', 'Emergency: Force streaming on connected');
       }
     }
   }, [sessionState]);
