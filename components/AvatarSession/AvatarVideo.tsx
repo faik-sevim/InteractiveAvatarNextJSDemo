@@ -515,7 +515,6 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
               top: 0,
               left: 0,
               opacity: videoState === 'loop' ? 1 : 0,
-              transition: "opacity 0.3s ease-in-out",
               pointerEvents: videoState === 'loop' ? 'auto' : 'none',
             }}
           >
@@ -538,7 +537,6 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
                 top: 0,
                 left: 0,
               opacity: videoState === 'intro' ? 1 : 0,
-              transition: "opacity 0.3s ease-in-out",
               pointerEvents: videoState === 'intro' ? 'auto' : 'none',
               }}
             >
@@ -560,7 +558,6 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
               top: 0,
               left: 0,
               opacity: videoState === 'streaming' ? 1 : 0,
-              transition: "opacity 0.3s ease-in-out",
               pointerEvents: videoState === 'streaming' ? 'auto' : 'none',
             }}
           >
@@ -583,7 +580,6 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
               top: 0,
               left: 0,
               opacity: videoState === 'ending' ? 1 : 0,
-              transition: "opacity 0.3s ease-in-out",
               pointerEvents: videoState === 'ending' ? 'auto' : 'none',
             }}
           >
@@ -607,7 +603,6 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
               top: 0,
               left: 0,
               opacity: videoState === 'error' ? 1 : 0,
-              transition: "opacity 0.3s ease-in-out",
               pointerEvents: videoState === 'error' ? 'auto' : 'none',
             }}
           >

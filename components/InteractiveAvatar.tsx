@@ -245,15 +245,18 @@ async function hardCloseSession(sessionId: string) {
 function InteractiveAvatar() {
   const { initAvatar, startAvatar, stopAvatar, avatarRef, sessionState, stream } =
     useStreamingAvatarSession();
-  const { startVoiceChat } = useVoiceChat();
+  const { startVoiceChat, unmuteInputAudio } = useVoiceChat();
   const { startMonitoring, stopMonitoring } = useAudioMonitor();
 
   const [config, setConfig] = useState<StartAvatarRequest>(DEFAULT_CONFIG);
   const [isEnglish, setIsEnglish] = useState(false);
   const [lastAvatarMessageTime, setLastAvatarMessageTime] = useState<number>(0);
+  const [shouldUnmuteOnFirstStop, setShouldUnmuteOnFirstStop] = useState(false);
+  const shouldUnmuteOnFirstStopRef = useRef(false);
 
   const mediaStream = useRef<HTMLVideoElement>(null);
   const [middleClickTimer, setMiddleClickTimer] = useState<NodeJS.Timeout | null>(null);
+  const [isSessionStarting, setIsSessionStarting] = useState(false);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -300,6 +303,14 @@ function InteractiveAvatar() {
   const startSessionV2 = useMemoizedFn(async (isVoiceChat: boolean, isEnglish: boolean = false) => {
     try {
       console.log(`🌐 START SESSION: isVoiceChat=${isVoiceChat}, isEnglish=${isEnglish}`);
+      
+      // GÜVENLİK: Session başlatırken middle click timer'ını temizle
+      if (middleClickTimer) {
+        console.log('Clearing middle click timer on session start');
+        clearTimeout(middleClickTimer);
+        setMiddleClickTimer(null);
+      }
+      
       setIsEnglish(isEnglish);
 
       console.log(`🔍 Language state set: isEnglish=${isEnglish} (${isEnglish ? 'English' : 'Turkish'})`);
@@ -379,6 +390,21 @@ function InteractiveAvatar() {
         const timestamp = new Date().toLocaleTimeString();
         console.log(`[${timestamp}] 🛑 Avatar stopped talking:`, event);
         
+        // DEBUG: Flag durumunu kontrol et
+        console.log(`🔍 DEBUG: shouldUnmuteOnFirstStop flag durumu: ${shouldUnmuteOnFirstStop}`);
+        console.log(`🔍 DEBUG: shouldUnmuteOnFirstStopRef.current durumu: ${shouldUnmuteOnFirstStopRef.current}`);
+        
+        // İlk defa avatar stopped talking geldiğinde mikrofonu unmute et
+        if (shouldUnmuteOnFirstStopRef.current) {
+          console.log("🎤 İlk avatar stopped talking - mikrofonu unmute ediliyor");
+          unmuteInputAudio();
+          setShouldUnmuteOnFirstStop(false);
+          shouldUnmuteOnFirstStopRef.current = false;
+          console.log("🎤 Mikrofon unmute edildi ve flag kapatıldı");
+        } else {
+          console.log("🔍 DEBUG: shouldUnmuteOnFirstStop flag false olduğu için unmute edilmedi");
+        }
+        
         // FALLBACK: Update lastAvatarMessageTime when avatar stops talking (for EN knowledge base)
         setLastAvatarMessageTime(Date.now());
         console.log(`🔄 FALLBACK: Updated lastAvatarMessageTime on AVATAR_STOP_TALKING for EN compatibility`);
@@ -402,6 +428,10 @@ function InteractiveAvatar() {
         console.log("🔌 Stream disconnected");
         console.log("🔌 Session state before cleanup:", sessionState);
         setLastAvatarMessageTime(0);
+        
+        // Reset unmute flag on disconnect
+        setShouldUnmuteOnFirstStop(false);
+        shouldUnmuteOnFirstStopRef.current = false;
         
         // Clear all timers on disconnect
         if (debounceTimerRef.current) {
@@ -495,10 +525,25 @@ function InteractiveAvatar() {
         if (mediaStream.current) {
           console.log("🎧 Starting audio monitoring for automatic microphone control");
           startMonitoring(mediaStream.current);
+          
+          // 🚨 CRITICAL FIX: Force video to switch to streaming state
+          console.log("🎬 FORCING video switch to streaming state - stream is ready");
+          setTimeout(() => {
+            window.dispatchEvent(new Event('avatar-start-talking'));
+          }, 500); // Small delay to ensure video is playing
         }
       }
+      
+      // GÜVENLİK: Session başarıyla başlatıldı, flag'i reset et
+      setIsSessionStarting(false);
+      console.log('🔒 Session başarıyla başlatıldı, isSessionStarting flag reset edildi');
+      
     } catch (error) {
       console.error("Error starting avatar session:", error);
+      
+      // GÜVENLİK: Hata durumunda da flag'i reset et
+      setIsSessionStarting(false);
+      console.log('🔒 Session başlatma hatası, isSessionStarting flag reset edildi');
       
       // 🚨 ERROR VIDEO: Dispatch error event to play error video
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -516,10 +561,18 @@ function InteractiveAvatar() {
     if (event.button !== 1) return;
     event.preventDefault();
 
+    // GÜVENLİK: Session aktifken veya başlatma sürecindeyken middle click'leri ignore et
+    if (sessionState !== StreamingAvatarSessionState.INACTIVE || isSessionStarting) {
+      console.log(`Middle click ignored - session state: ${sessionState}, isSessionStarting: ${isSessionStarting}`);
+      return;
+    }
+
+    // GÜVENLİK: Zaten bir middle click timer varsa ve yeni click geliyorsa, sadece double click kontrolü yap
     if (middleClickTimer) {
       // Double click detected within 3 seconds
       clearTimeout(middleClickTimer);
       setMiddleClickTimer(null);
+      setIsSessionStarting(true); // GÜVENLİK: Hemen flag set et
       console.log('Double middle click detected: Starting English session.');
       await startSessionV2(true, true);
       return;
@@ -529,6 +582,12 @@ function InteractiveAvatar() {
     console.log('Single middle click detected, waiting for potential double click...');
     const timer = setTimeout(async () => {
       setMiddleClickTimer(null);
+      // ÇİFTE KONTROL: Timer tetiklenirken bile session state'ini kontrol et
+      if (sessionState !== StreamingAvatarSessionState.INACTIVE || isSessionStarting) {
+        console.log(`Timer fired but session state changed to: ${sessionState} or isSessionStarting: ${isSessionStarting}. Ignoring timer.`);
+        return;
+      }
+      setIsSessionStarting(true); // GÜVENLİK: Timer tetiklendiğinde de flag set et
       console.log('No double click detected: Starting Turkish session.');
       await startSessionV2(true, false);
     }, 3000);
@@ -537,6 +596,9 @@ function InteractiveAvatar() {
 
   useUnmount(() => {
     setLastAvatarMessageTime(0);
+    setShouldUnmuteOnFirstStop(false);
+    shouldUnmuteOnFirstStopRef.current = false;
+    setIsSessionStarting(false);
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
@@ -553,6 +615,14 @@ function InteractiveAvatar() {
   // Debug session state changes
   useEffect(() => {
     console.log(`🔄 SESSION STATE CHANGED: ${sessionState}`);
+    
+    // Session CONNECTED olduğunda flag'i set et
+    if (sessionState === StreamingAvatarSessionState.CONNECTED && !shouldUnmuteOnFirstStopRef.current) {
+      setShouldUnmuteOnFirstStop(true);
+      shouldUnmuteOnFirstStopRef.current = true;
+      console.log("🎧 Session CONNECTED - mikrofon ilk avatar stop talking'de unmute edilecek");
+      console.log("🔍 DEBUG: shouldUnmuteOnFirstStop flag TRUE olarak set edildi (via session state)");
+    }
   }, [sessionState]);
 
   useEffect(() => {
@@ -566,12 +636,6 @@ function InteractiveAvatar() {
         // Start audio monitoring when stream is ready and playing
         console.log("🎧 Starting audio monitoring after stream is ready");
         startMonitoring(mediaStream.current!);
-        
-        // 🚨 CRITICAL FIX: Force video to switch to streaming state
-        console.log("🎬 FORCING video switch to streaming state - stream is ready");
-        setTimeout(() => {
-          window.dispatchEvent(new Event('avatar-start-talking'));
-        }, 500); // Small delay to ensure video is playing
       };
     } else {
       console.log('Stream or mediaStream.current not available:', { stream: !!stream, mediaStreamRef: !!mediaStream.current });
