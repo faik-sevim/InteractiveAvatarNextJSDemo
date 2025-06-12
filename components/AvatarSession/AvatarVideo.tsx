@@ -11,6 +11,115 @@ import { Button } from "../Button";
 interface AvatarVideoProps {
   isEnglish?: boolean;
 }
+enum LogLevel {
+  ERROR = 0,
+  WARN = 1,
+  INFO = 2,
+  DEBUG = 3,
+  TRACE = 4
+}
+
+class SmartLogger {
+  private static instance: SmartLogger;
+  private logBuffer: Array<{timestamp: string, level: LogLevel, message: string, data?: any}> = [];
+  private readonly maxBufferSize = 100; // Son 100 log'u tut
+  private readonly isDevelopment = process.env.NODE_ENV === 'development';
+  private readonly logLevel: LogLevel;
+
+  constructor() {
+    // Environment variable'dan log level belirle
+    const envLogLevel = process.env.NEXT_PUBLIC_LOG_LEVEL?.toUpperCase();
+    this.logLevel = this.isDevelopment 
+      ? LogLevel.DEBUG  // Development'da varsayılan DEBUG
+      : LogLevel.WARN;  // Production'da varsayılan WARN
+    
+    // Override if specific level set
+    switch(envLogLevel) {
+      case 'ERROR': this.logLevel = LogLevel.ERROR; break;
+      case 'WARN': this.logLevel = LogLevel.WARN; break;
+      case 'INFO': this.logLevel = LogLevel.INFO; break;
+      case 'DEBUG': this.logLevel = LogLevel.DEBUG; break;
+      case 'TRACE': this.logLevel = LogLevel.TRACE; break;
+    }
+  }
+
+  static getInstance(): SmartLogger {
+    if (!SmartLogger.instance) {
+      SmartLogger.instance = new SmartLogger();
+    }
+    return SmartLogger.instance;
+  }
+
+  private shouldLog(level: LogLevel): boolean {
+    return level <= this.logLevel;
+  }
+
+  private addToBuffer(level: LogLevel, message: string, data?: any) {
+    if (this.logBuffer.length >= this.maxBufferSize) {
+      this.logBuffer.shift(); // En eski log'u sil
+    }
+    
+    this.logBuffer.push({
+      timestamp: new Date().toLocaleTimeString(),
+      level,
+      message,
+      data
+    });
+  }
+
+  error(message: string, data?: any) {
+    if (this.shouldLog(LogLevel.ERROR)) {
+      console.error(`🚨 [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+      this.addToBuffer(LogLevel.ERROR, message, data);
+    }
+  }
+
+  warn(message: string, data?: any) {
+    if (this.shouldLog(LogLevel.WARN)) {
+      console.warn(`⚠️ [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+      this.addToBuffer(LogLevel.WARN, message, data);
+    }
+  }
+
+  info(message: string, data?: any) {
+    if (this.shouldLog(LogLevel.INFO)) {
+      logger.debug(`ℹ️ [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+      this.addToBuffer(LogLevel.INFO, message, data);
+    }
+  }
+
+  debug(message: string, data?: any) {
+    if (this.shouldLog(LogLevel.DEBUG)) {
+      logger.debug(`🔍 [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+      this.addToBuffer(LogLevel.DEBUG, message, data);
+    }
+  }
+
+  trace(message: string, data?: any) {
+    if (this.shouldLog(LogLevel.TRACE)) {
+      logger.debug(`🔬 [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+      this.addToBuffer(LogLevel.TRACE, message, data);
+    }
+  }
+
+  // Log buffer'ını görüntüle (debugging için)
+  showBuffer() {
+    if (this.isDevelopment) {
+      console.table(this.logBuffer);
+    }
+  }
+
+  // Buffer'ı temizle
+  clearBuffer() {
+    this.logBuffer = [];
+    if (this.isDevelopment) {
+      logger.debug('🧹 Log buffer cleared');
+    }
+  }
+}
+
+// Global logger instance
+const logger = SmartLogger.getInstance();
 
 type VideoState = 'loop' | 'intro' | 'streaming' | 'ending' | 'error';
 
@@ -24,9 +133,9 @@ class VideoController {
     if (!this.debugMode) return;
     const timestamp = new Date().toLocaleTimeString();
     if (data) {
-      console.log(`[VideoController ${timestamp}] ${message}`, data);
+      logger.debug(`[VideoController ${timestamp}] ${message}`, data);
     } else {
-      console.log(`[VideoController ${timestamp}] ${message}`);
+      logger.debug(`[VideoController ${timestamp}] ${message}`);
     }
   }
 
@@ -289,9 +398,9 @@ export const AvatarVideo = forwardRef<HTMLVideoElement, AvatarVideoProps>(({ isE
       controller.log('📋 Session connecting - intro should already be playing from session-starting event');
     } else if (sessionState === StreamingAvatarSessionState.CONNECTED) {
       // 🚨 EMERGENCY FIX: Force switch to streaming when connected
-      console.log(`🚨 EMERGENCY: Session connected, current video state: ${videoState}`);
+      logger.debug(`🚨 EMERGENCY: Session connected, current video state: ${videoState}`);
       if (videoState !== 'streaming') {
-        console.log("🚨 FORCING switch to streaming video - session is connected");
+        logger.debug("🚨 FORCING switch to streaming video - session is connected");
         handleVideoStateChange('streaming', 'Emergency: Force streaming on connected');
       }
     }

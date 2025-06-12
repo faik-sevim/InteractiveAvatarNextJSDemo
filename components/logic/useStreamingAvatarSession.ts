@@ -44,10 +44,118 @@ export const useStreamingAvatarSession = () => {
     },
     [basePath, avatarRef],
   );
-
+  enum LogLevel {
+    ERROR = 0,
+    WARN = 1,
+    INFO = 2,
+    DEBUG = 3,
+    TRACE = 4
+  }
+  
+  class SmartLogger {
+    private static instance: SmartLogger;
+    private logBuffer: Array<{timestamp: string, level: LogLevel, message: string, data?: any}> = [];
+    private readonly maxBufferSize = 100; // Son 100 log'u tut
+    private readonly isDevelopment = process.env.NODE_ENV === 'development';
+    private readonly logLevel: LogLevel;
+  
+    constructor() {
+      // Environment variable'dan log level belirle
+      const envLogLevel = process.env.NEXT_PUBLIC_LOG_LEVEL?.toUpperCase();
+      this.logLevel = this.isDevelopment 
+        ? LogLevel.DEBUG  // Development'da varsayılan DEBUG
+        : LogLevel.WARN;  // Production'da varsayılan WARN
+      
+      // Override if specific level set
+      switch(envLogLevel) {
+        case 'ERROR': this.logLevel = LogLevel.ERROR; break;
+        case 'WARN': this.logLevel = LogLevel.WARN; break;
+        case 'INFO': this.logLevel = LogLevel.INFO; break;
+        case 'DEBUG': this.logLevel = LogLevel.DEBUG; break;
+        case 'TRACE': this.logLevel = LogLevel.TRACE; break;
+      }
+    }
+  
+    static getInstance(): SmartLogger {
+      if (!SmartLogger.instance) {
+        SmartLogger.instance = new SmartLogger();
+      }
+      return SmartLogger.instance;
+    }
+  
+    private shouldLog(level: LogLevel): boolean {
+      return level <= this.logLevel;
+    }
+  
+    private addToBuffer(level: LogLevel, message: string, data?: any) {
+      if (this.logBuffer.length >= this.maxBufferSize) {
+        this.logBuffer.shift(); // En eski log'u sil
+      }
+      
+      this.logBuffer.push({
+        timestamp: new Date().toLocaleTimeString(),
+        level,
+        message,
+        data
+      });
+    }
+  
+    error(message: string, data?: any) {
+      if (this.shouldLog(LogLevel.ERROR)) {
+        console.error(`🚨 [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+        this.addToBuffer(LogLevel.ERROR, message, data);
+      }
+    }
+  
+    warn(message: string, data?: any) {
+      if (this.shouldLog(LogLevel.WARN)) {
+        console.warn(`⚠️ [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+        this.addToBuffer(LogLevel.WARN, message, data);
+      }
+    }
+  
+    info(message: string, data?: any) {
+      if (this.shouldLog(LogLevel.INFO)) {
+        logger.debug(`ℹ️ [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+        this.addToBuffer(LogLevel.INFO, message, data);
+      }
+    }
+  
+    debug(message: string, data?: any) {
+      if (this.shouldLog(LogLevel.DEBUG)) {
+        logger.debug(`🔍 [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+        this.addToBuffer(LogLevel.DEBUG, message, data);
+      }
+    }
+  
+    trace(message: string, data?: any) {
+      if (this.shouldLog(LogLevel.TRACE)) {
+        logger.debug(`🔬 [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+        this.addToBuffer(LogLevel.TRACE, message, data);
+      }
+    }
+  
+    // Log buffer'ını görüntüle (debugging için)
+    showBuffer() {
+      if (this.isDevelopment) {
+        console.table(this.logBuffer);
+      }
+    }
+  
+    // Buffer'ı temizle
+    clearBuffer() {
+      this.logBuffer = [];
+      if (this.isDevelopment) {
+        logger.debug('🧹 Log buffer cleared');
+      }
+    }
+  }
+  
+  // Global logger instance
+  const logger = SmartLogger.getInstance();
   const handleStream = useCallback(
     ({ detail }: { detail: MediaStream }) => {
-      console.log("🟢 STREAM_READY - Setting session state to CONNECTED");
+      logger.debug("🟢 STREAM_READY - Setting session state to CONNECTED");
       setStream(detail);
       setSessionState(StreamingAvatarSessionState.CONNECTED);
     },
@@ -55,8 +163,8 @@ export const useStreamingAvatarSession = () => {
   );
 
   const stop = useCallback(async () => {
-    console.log("🔌 useStreamingAvatarSession.stop() called");
-    console.log("🔌 Current session state before stop:", sessionState);
+    logger.debug("🔌 useStreamingAvatarSession.stop() called");
+    logger.debug("🔌 Current session state before stop:", sessionState);
     
     avatarRef.current?.off(StreamingEvents.STREAM_READY, handleStream);
     // Note: handleStreamDisconnected is defined locally in start function
@@ -68,7 +176,7 @@ export const useStreamingAvatarSession = () => {
     setStream(null);
     await avatarRef.current?.stopAvatar();
     setSessionState(StreamingAvatarSessionState.INACTIVE);
-    console.log("🔌 Session state set to INACTIVE");
+    logger.debug("🔌 Session state set to INACTIVE");
   }, [
     handleStream,
     setSessionState,
@@ -99,31 +207,31 @@ export const useStreamingAvatarSession = () => {
       }
 
       setSessionState(StreamingAvatarSessionState.CONNECTING);
-      console.log("🟡 Setting session state to CONNECTING");
+      logger.debug("🟡 Setting session state to CONNECTING");
       
       avatarRef.current.on(StreamingEvents.STREAM_READY, handleStream);
       const handleStreamDisconnected = () => {
-        console.log("🔴 STREAM_DISCONNECTED event received");
+        logger.debug("🔴 STREAM_DISCONNECTED event received");
         
         // Check if this is a premature disconnection during avatar talking
         const avatarStillTalking = document.body.getAttribute('data-avatar-talking') === 'true';
         if (avatarStillTalking) {
-          console.log("⚠️  STREAM_DISCONNECTED while avatar still talking - delaying stop()");
+          logger.debug("⚠️  STREAM_DISCONNECTED while avatar still talking - delaying stop()");
           // Delay the stop to allow avatar to finish current speech
           setTimeout(() => {
-            console.log("🔴 Delayed stop() execution after avatar talking check");
+            logger.debug("🔴 Delayed stop() execution after avatar talking check");
             // Double check avatar is no longer talking before stopping
             const stillTalking = document.body.getAttribute('data-avatar-talking') === 'true';
             if (!stillTalking) {
               stop();
             } else {
-              console.log("🔴 Avatar still talking after delay - forcing stop()");
+              logger.debug("🔴 Avatar still talking after delay - forcing stop()");
               document.body.removeAttribute('data-avatar-talking');
               stop();
             }
           }, 3000);
         } else {
-          console.log("🔴 Normal STREAM_DISCONNECTED - calling stop() immediately");
+          logger.debug("🔴 Normal STREAM_DISCONNECTED - calling stop() immediately");
           stop();
         }
       };
