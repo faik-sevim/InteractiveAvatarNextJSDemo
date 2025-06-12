@@ -22,6 +22,119 @@ import { MessageHistory } from "./AvatarSession/MessageHistory";
 
 import { AVATARS } from "@/app/lib/constants";
 
+// ========================================
+// 🚀 SMART LOGGING UTILITY
+// ========================================
+enum LogLevel {
+  ERROR = 0,
+  WARN = 1,
+  INFO = 2,
+  DEBUG = 3,
+  TRACE = 4
+}
+
+class SmartLogger {
+  private static instance: SmartLogger;
+  private logBuffer: Array<{timestamp: string, level: LogLevel, message: string, data?: any}> = [];
+  private readonly maxBufferSize = 100; // Son 100 log'u tut
+  private readonly isDevelopment = process.env.NODE_ENV === 'development';
+  private readonly logLevel: LogLevel;
+
+  constructor() {
+    // Environment variable'dan log level belirle
+    const envLogLevel = process.env.NEXT_PUBLIC_LOG_LEVEL?.toUpperCase();
+    this.logLevel = this.isDevelopment 
+      ? LogLevel.DEBUG  // Development'da varsayılan DEBUG
+      : LogLevel.WARN;  // Production'da varsayılan WARN
+    
+    // Override if specific level set
+    switch(envLogLevel) {
+      case 'ERROR': this.logLevel = LogLevel.ERROR; break;
+      case 'WARN': this.logLevel = LogLevel.WARN; break;
+      case 'INFO': this.logLevel = LogLevel.INFO; break;
+      case 'DEBUG': this.logLevel = LogLevel.DEBUG; break;
+      case 'TRACE': this.logLevel = LogLevel.TRACE; break;
+    }
+  }
+
+  static getInstance(): SmartLogger {
+    if (!SmartLogger.instance) {
+      SmartLogger.instance = new SmartLogger();
+    }
+    return SmartLogger.instance;
+  }
+
+  private shouldLog(level: LogLevel): boolean {
+    return level <= this.logLevel;
+  }
+
+  private addToBuffer(level: LogLevel, message: string, data?: any) {
+    if (this.logBuffer.length >= this.maxBufferSize) {
+      this.logBuffer.shift(); // En eski log'u sil
+    }
+    
+    this.logBuffer.push({
+      timestamp: new Date().toLocaleTimeString(),
+      level,
+      message,
+      data
+    });
+  }
+
+  error(message: string, data?: any) {
+    if (this.shouldLog(LogLevel.ERROR)) {
+      console.error(`🚨 [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+      this.addToBuffer(LogLevel.ERROR, message, data);
+    }
+  }
+
+  warn(message: string, data?: any) {
+    if (this.shouldLog(LogLevel.WARN)) {
+      console.warn(`⚠️ [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+      this.addToBuffer(LogLevel.WARN, message, data);
+    }
+  }
+
+  info(message: string, data?: any) {
+    if (this.shouldLog(LogLevel.INFO)) {
+      logger.debug(`ℹ️ [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+      this.addToBuffer(LogLevel.INFO, message, data);
+    }
+  }
+
+  debug(message: string, data?: any) {
+    if (this.shouldLog(LogLevel.DEBUG)) {
+      logger.debug(`🔍 [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+      this.addToBuffer(LogLevel.DEBUG, message, data);
+    }
+  }
+
+  trace(message: string, data?: any) {
+    if (this.shouldLog(LogLevel.TRACE)) {
+      logger.debug(`🔬 [${new Date().toLocaleTimeString()}] ${message}`, data || '');
+      this.addToBuffer(LogLevel.TRACE, message, data);
+    }
+  }
+
+  // Log buffer'ını görüntüle (debugging için)
+  showBuffer() {
+    if (this.isDevelopment) {
+      console.table(this.logBuffer);
+    }
+  }
+
+  // Buffer'ı temizle
+  clearBuffer() {
+    this.logBuffer = [];
+    if (this.isDevelopment) {
+      logger.debug('🧹 Log buffer cleared');
+    }
+  }
+}
+
+// Global logger instance
+const logger = SmartLogger.getInstance();
+
 const DEFAULT_CONFIG: StartAvatarRequest = {
   quality: (process.env.NEXT_PUBLIC_AVATAR_QUALITY as AvatarQuality) || AvatarQuality.Low,
   avatarName: process.env.NEXT_PUBLIC_AVATAR_ID || AVATARS[0].avatar_id,
@@ -49,10 +162,10 @@ async function listActiveSessions() {
 
     if (!response.ok) {
       if (response.status === 408) {
-        console.warn("Session list request timed out - continuing with session start");
+        logger.warn("Session list request timed out - continuing with session start");
         return [];
       } else if (response.status === 503) {
-        console.warn("Network connection failed for session list - continuing with session start");
+        logger.warn("Network connection failed for session list - continuing with session start");
         return [];
       } else {
         throw new Error(`Failed to list sessions: ${response.statusText}`);
@@ -60,23 +173,23 @@ async function listActiveSessions() {
     }
 
     const data = await response.json();
-    console.log("Active sessions:", data);
+    logger.info("Active sessions:", data);
     
     // Handle HeyGen API response structure: {code: 100, data: {sessions: []}, message: 'success'}
     if (data.data && data.data.sessions) {
-      console.log(`🔍 API Response: Found ${data.data.sessions.length} sessions in data.data.sessions`);
+      logger.debug(`API Response: Found ${data.data.sessions.length} sessions in data.data.sessions`);
       return data.data.sessions;
     } else if (data.sessions) {
-      console.log(`🔍 API Response: Found ${data.sessions.length} sessions in data.sessions`);
+      logger.debug(`API Response: Found ${data.sessions.length} sessions in data.sessions`);
       return data.sessions;
     } else {
-      console.log("🔍 API Response: No sessions found in expected structure");
-      console.log("🔍 Full response structure:", JSON.stringify(data, null, 2));
+      logger.debug("API Response: No sessions found in expected structure");
+      logger.trace("Full response structure:", data);
       return [];
     }
   } catch (error) {
-    console.error("Error listing active sessions:", error);
-    console.warn("Continuing with session start despite session list error");
+    logger.error("Error listing active sessions:", error);
+    logger.warn("Continuing with session start despite session list error");
     return [];
   }
 }
@@ -96,7 +209,7 @@ async function closeSession(sessionId: string) {
     }
 
     const data = await response.json();
-    console.log(`Session ${sessionId} closed:`, data);
+    logger.debug(`Session ${sessionId} closed:`, data);
     return data;
   } catch (error) {
     console.error(`Error closing session ${sessionId}:`, error);
@@ -105,37 +218,37 @@ async function closeSession(sessionId: string) {
 }
 
 async function closeAllActiveSessions() {
-  console.log("🔍 ======= ROBUST SESSION CLEANUP START =======");
+  logger.debug("🔍 ======= ROBUST SESSION CLEANUP START =======");
   
   try {
     // Step 1: List all active sessions
     const sessions = await listActiveSessions();
-    console.log(`📋 Found ${sessions.length} active sessions`);
+    logger.debug(`📋 Found ${sessions.length} active sessions`);
     
     if (sessions.length === 0) {
-      console.log("✅ No active sessions found - cleanup complete");
+      logger.debug("✅ No active sessions found - cleanup complete");
       return;
     }
 
     // Step 2: Display all sessions in console
-    console.log("📝 Active Sessions Details:");
+    logger.debug("📝 Active Sessions Details:");
     sessions.forEach((session: any, index: number) => {
-      console.log(`  [${index + 1}] Session ID: ${session.session_id}`);
-      console.log(`      Status: ${session.status}`);
-      console.log(`      Created: ${new Date(session.created_at * 1000).toLocaleString()}`);
-      console.log(`      Age: ${Math.floor((Date.now() / 1000 - session.created_at) / 60)} minutes`);
+      logger.debug(`  [${index + 1}] Session ID: ${session.session_id}`);
+      logger.debug(`      Status: ${session.status}`);
+      logger.debug(`      Created: ${new Date(session.created_at * 1000).toLocaleString()}`);
+      logger.debug(`      Age: ${Math.floor((Date.now() / 1000 - session.created_at) / 60)} minutes`);
     });
 
     // Step 3: Close all sessions with regular close
-    console.log("🔄 Attempting to close all sessions...");
+    logger.debug("🔄 Attempting to close all sessions...");
     const closeResults = [];
     
     for (const session of sessions) {
       try {
-        console.log(`⏳ Closing session ${session.session_id} (status: ${session.status})`);
+        logger.debug(`⏳ Closing session ${session.session_id} (status: ${session.status})`);
         await closeSession(session.session_id);
         closeResults.push({ sessionId: session.session_id, result: 'success' });
-        console.log(`✅ Successfully closed session ${session.session_id}`);
+        logger.debug(`✅ Successfully closed session ${session.session_id}`);
       } catch (error) {
         console.error(`❌ Failed to close session ${session.session_id}:`, error);
         closeResults.push({ sessionId: session.session_id, result: 'failed', error });
@@ -143,26 +256,26 @@ async function closeAllActiveSessions() {
     }
 
     // Step 4: Wait a moment for sessions to actually close
-    console.log("⏳ Waiting 2 seconds for sessions to close...");
+    logger.debug("⏳ Waiting 2 seconds for sessions to close...");
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Step 5: Check for remaining sessions
-    console.log("🔍 Checking for remaining sessions...");
+    logger.debug("🔍 Checking for remaining sessions...");
     const remainingSessions = await listActiveSessions();
     
     if (remainingSessions.length === 0) {
-      console.log("✅ All sessions successfully closed!");
-      console.log("🔍 ======= ROBUST SESSION CLEANUP COMPLETE =======");
+      logger.debug("✅ All sessions successfully closed!");
+      logger.debug("🔍 ======= ROBUST SESSION CLEANUP COMPLETE =======");
       return;
     }
 
     // Step 6: HARDCLOSE remaining sessions
-    console.log(`⚠️  Found ${remainingSessions.length} remaining sessions - initiating HARDCLOSE`);
-    console.log("💀 HARDCLOSE Sessions Details:");
+    logger.debug(`⚠️  Found ${remainingSessions.length} remaining sessions - initiating HARDCLOSE`);
+    logger.debug("💀 HARDCLOSE Sessions Details:");
     remainingSessions.forEach((session: any, index: number) => {
-      console.log(`  [${index + 1}] REMAINING Session ID: ${session.session_id}`);
-      console.log(`      Status: ${session.status}`);
-      console.log(`      Created: ${new Date(session.created_at * 1000).toLocaleString()}`);
+      logger.debug(`  [${index + 1}] REMAINING Session ID: ${session.session_id}`);
+      logger.debug(`      Status: ${session.status}`);
+      logger.debug(`      Created: ${new Date(session.created_at * 1000).toLocaleString()}`);
     });
 
     // Step 7: Force close remaining sessions
@@ -170,10 +283,10 @@ async function closeAllActiveSessions() {
     
     for (const session of remainingSessions) {
       try {
-        console.log(`💀 HARDCLOSE attempt for session ${session.session_id}`);
+        logger.debug(`💀 HARDCLOSE attempt for session ${session.session_id}`);
         await hardCloseSession(session.session_id);
         hardCloseResults.push({ sessionId: session.session_id, result: 'hardclose-success' });
-        console.log(`💀✅ HARDCLOSE successful for session ${session.session_id}`);
+        logger.debug(`💀✅ HARDCLOSE successful for session ${session.session_id}`);
       } catch (error) {
         console.error(`💀❌ HARDCLOSE failed for session ${session.session_id}:`, error);
         hardCloseResults.push({ sessionId: session.session_id, result: 'hardclose-failed', error });
@@ -181,35 +294,35 @@ async function closeAllActiveSessions() {
     }
 
     // Step 8: Final verification
-    console.log("⏳ Waiting 3 seconds after HARDCLOSE...");
+    logger.debug("⏳ Waiting 3 seconds after HARDCLOSE...");
     await new Promise(resolve => setTimeout(resolve, 3000));
     
     const finalCheck = await listActiveSessions();
     
     if (finalCheck.length === 0) {
-      console.log("💀✅ HARDCLOSE successful - all sessions terminated!");
+      logger.debug("💀✅ HARDCLOSE successful - all sessions terminated!");
     } else {
-      console.log(`💀⚠️  WARNING: ${finalCheck.length} sessions still remain after HARDCLOSE`);
+      logger.debug(`💀⚠️  WARNING: ${finalCheck.length} sessions still remain after HARDCLOSE`);
       finalCheck.forEach((session: any, index: number) => {
-        console.log(`  [${index + 1}] STUBBORN Session ID: ${session.session_id} (status: ${session.status})`);
+        logger.debug(`  [${index + 1}] STUBBORN Session ID: ${session.session_id} (status: ${session.status})`);
       });
     }
 
     // Step 9: Summary report
-    console.log("📊 SESSION CLEANUP SUMMARY:");
-    console.log(`  📋 Initial sessions found: ${sessions.length}`);
-    console.log(`  ✅ Regular close successful: ${closeResults.filter(r => r.result === 'success').length}`);
-    console.log(`  ❌ Regular close failed: ${closeResults.filter(r => r.result === 'failed').length}`);
-    console.log(`  💀 HARDCLOSE attempted: ${remainingSessions.length}`);
-    console.log(`  💀✅ HARDCLOSE successful: ${hardCloseResults.filter(r => r.result === 'hardclose-success').length}`);
-    console.log(`  💀❌ HARDCLOSE failed: ${hardCloseResults.filter(r => r.result === 'hardclose-failed').length}`);
-    console.log(`  🔍 Final remaining sessions: ${finalCheck.length}`);
+    logger.debug("📊 SESSION CLEANUP SUMMARY:");
+    logger.debug(`  📋 Initial sessions found: ${sessions.length}`);
+    logger.debug(`  ✅ Regular close successful: ${closeResults.filter(r => r.result === 'success').length}`);
+    logger.debug(`  ❌ Regular close failed: ${closeResults.filter(r => r.result === 'failed').length}`);
+    logger.debug(`  💀 HARDCLOSE attempted: ${remainingSessions.length}`);
+    logger.debug(`  💀✅ HARDCLOSE successful: ${hardCloseResults.filter(r => r.result === 'hardclose-success').length}`);
+    logger.debug(`  💀❌ HARDCLOSE failed: ${hardCloseResults.filter(r => r.result === 'hardclose-failed').length}`);
+    logger.debug(`  🔍 Final remaining sessions: ${finalCheck.length}`);
     
-    console.log("🔍 ======= ROBUST SESSION CLEANUP COMPLETE =======");
+    logger.debug("🔍 ======= ROBUST SESSION CLEANUP COMPLETE =======");
 
   } catch (error) {
     console.error("🚨 CRITICAL ERROR in robust session cleanup:", error);
-    console.log("🔍 ======= ROBUST SESSION CLEANUP FAILED =======");
+    logger.debug("🔍 ======= ROBUST SESSION CLEANUP FAILED =======");
     throw error;
   }
 }
@@ -233,7 +346,7 @@ async function hardCloseSession(sessionId: string) {
     }
 
     const data = await response.json();
-    console.log(`💀 HARDCLOSE result for ${sessionId}:`, data);
+    logger.debug(`💀 HARDCLOSE result for ${sessionId}:`, data);
     return data;
     
   } catch (error) {
@@ -262,7 +375,7 @@ function InteractiveAvatar() {
 
   async function fetchAccessToken() {
     try {
-      console.log("Fetching access token...");
+      logger.debug("Fetching access token...");
       const response = await fetch("/api/get-access-token", {
         method: "POST",
         headers: {
@@ -291,7 +404,7 @@ function InteractiveAvatar() {
         throw new Error("Invalid access token received");
       }
 
-      console.log("Access Token:", "Success"); // Don't log the actual token for security
+      logger.debug("Access Token:", "Success"); // Don't log the actual token for security
 
       return token;
     } catch (error) {
@@ -302,28 +415,28 @@ function InteractiveAvatar() {
 
   const startSessionV2 = useMemoizedFn(async (isVoiceChat: boolean, isEnglish: boolean = false) => {
     try {
-      console.log(`🌐 START SESSION: isVoiceChat=${isVoiceChat}, isEnglish=${isEnglish}`);
+      logger.info(`START SESSION: isVoiceChat=${isVoiceChat}, isEnglish=${isEnglish}`);
       
       // GÜVENLİK: Session başlatırken middle click timer'ını temizle
       if (middleClickTimer) {
-        console.log('Clearing middle click timer on session start');
+        logger.debug('Clearing middle click timer on session start');
         clearTimeout(middleClickTimer);
         setMiddleClickTimer(null);
       }
       
       setIsEnglish(isEnglish);
 
-      console.log(`🔍 Language state set: isEnglish=${isEnglish} (${isEnglish ? 'English' : 'Turkish'})`);
+      logger.debug(`Language state set: isEnglish=${isEnglish} (${isEnglish ? 'English' : 'Turkish'})`);
       
       // 🎬 INTRO VIDEO: Immediately trigger intro video when session starts
-      console.log('🎬 Triggering intro video immediately on session start');
+      logger.info('Triggering intro video immediately on session start');
       window.dispatchEvent(new CustomEvent('session-starting', { 
         detail: { language: isEnglish ? 'en' : 'tr' }
       }));
       
       const newToken = await fetchAccessToken();
       
-      console.log('DEFAULT_CONFIG loaded from environment:', {
+      logger.debug('DEFAULT_CONFIG loaded from environment:', {
         quality: DEFAULT_CONFIG.quality,
         avatarName: DEFAULT_CONFIG.avatarName,
         voiceChatTransport: DEFAULT_CONFIG.voiceChatTransport,
@@ -332,29 +445,29 @@ function InteractiveAvatar() {
       });
       
       // Close all active sessions before starting a new one
-      console.log("Checking for active sessions before starting new session...");
+      logger.debug("Checking for active sessions before starting new session...");
       await closeAllActiveSessions();
       
       const avatar = initAvatar(newToken);
 
       avatar.on(StreamingEvents.AVATAR_START_TALKING, (e) => {
         const timestamp = new Date().toLocaleTimeString();
-        console.log(`[${timestamp}] 🗣️ Avatar started talking`, e);
+        logger.debug(`[${timestamp}] 🗣️ Avatar started talking`, e);
         
         // FALLBACK: Set lastAvatarMessageTime when avatar starts talking (for EN knowledge base)
         setLastAvatarMessageTime(Date.now());
-        console.log(`🔄 FALLBACK: Set lastAvatarMessageTime on AVATAR_START_TALKING for EN compatibility`);
+        logger.debug(`🔄 FALLBACK: Set lastAvatarMessageTime on AVATAR_START_TALKING for EN compatibility`);
         
         // Clear session ending timers if avatar starts talking
         if (debounceTimerRef.current) {
           clearTimeout(debounceTimerRef.current);
           debounceTimerRef.current = null;
-          console.log("Debounce timer cleared - avatar started talking");
+          logger.debug("Debounce timer cleared - avatar started talking");
         }
         if (countdownTimerRef.current) {
           clearTimeout(countdownTimerRef.current);
           countdownTimerRef.current = null;
-          console.log("Countdown timer cleared - avatar started talking");
+          logger.debug("Countdown timer cleared - avatar started talking");
         }
         
         // Dispatch custom event for video transition
@@ -362,71 +475,71 @@ function InteractiveAvatar() {
       });
       
       avatar.on(StreamingEvents.AVATAR_TALKING_MESSAGE, (event) => {
-        console.log(">>>>> Avatar talking message:", event);
+        logger.debug(">>>>> Avatar talking message:", event);
         setLastAvatarMessageTime(Date.now());
-        console.log(`🔄 NORMAL: Set lastAvatarMessageTime on AVATAR_TALKING_MESSAGE`);
+        logger.debug(`🔄 NORMAL: Set lastAvatarMessageTime on AVATAR_TALKING_MESSAGE`);
         
         // CRITICAL: Clear any existing session ending timers when avatar is actively talking
         let clearedTimers = false;
         if (debounceTimerRef.current) {
-          console.log(`CLEARING debounce timer ${debounceTimerRef.current} - avatar actively talking`);
+          logger.debug(`CLEARING debounce timer ${debounceTimerRef.current} - avatar actively talking`);
           clearTimeout(debounceTimerRef.current);
           debounceTimerRef.current = null;
           clearedTimers = true;
         }
         if (countdownTimerRef.current) {
-          console.log(`CLEARING countdown timer ${countdownTimerRef.current} - avatar actively talking`);
+          logger.debug(`CLEARING countdown timer ${countdownTimerRef.current} - avatar actively talking`);
           clearTimeout(countdownTimerRef.current);
           countdownTimerRef.current = null;
           clearedTimers = true;
         }
         
         if (clearedTimers) {
-          console.log("✅ Session ending timers cleared - avatar is actively talking");
+          logger.debug("✅ Session ending timers cleared - avatar is actively talking");
         }
       });
       
       avatar.on(StreamingEvents.AVATAR_STOP_TALKING, (event) => {
         const timestamp = new Date().toLocaleTimeString();
-        console.log(`[${timestamp}] 🛑 Avatar stopped talking:`, event);
+        logger.debug(`[${timestamp}] 🛑 Avatar stopped talking:`, event);
         
         // DEBUG: Flag durumunu kontrol et
-        console.log(`🔍 DEBUG: shouldUnmuteOnFirstStop flag durumu: ${shouldUnmuteOnFirstStop}`);
-        console.log(`🔍 DEBUG: shouldUnmuteOnFirstStopRef.current durumu: ${shouldUnmuteOnFirstStopRef.current}`);
+        logger.debug(`🔍 DEBUG: shouldUnmuteOnFirstStop flag durumu: ${shouldUnmuteOnFirstStop}`);
+        logger.debug(`🔍 DEBUG: shouldUnmuteOnFirstStopRef.current durumu: ${shouldUnmuteOnFirstStopRef.current}`);
         
         // İlk defa avatar stopped talking geldiğinde mikrofonu unmute et
         if (shouldUnmuteOnFirstStopRef.current) {
-          console.log("🎤 İlk avatar stopped talking - mikrofonu unmute ediliyor");
+          logger.debug("🎤 İlk avatar stopped talking - mikrofonu unmute ediliyor");
           unmuteInputAudio();
           setShouldUnmuteOnFirstStop(false);
           shouldUnmuteOnFirstStopRef.current = false;
-          console.log("🎤 Mikrofon unmute edildi ve flag kapatıldı");
+          logger.debug("🎤 Mikrofon unmute edildi ve flag kapatıldı");
         } else {
-          console.log("🔍 DEBUG: shouldUnmuteOnFirstStop flag false olduğu için unmute edilmedi");
+          logger.debug("🔍 DEBUG: shouldUnmuteOnFirstStop flag false olduğu için unmute edilmedi");
         }
         
         // FALLBACK: Update lastAvatarMessageTime when avatar stops talking (for EN knowledge base)
         setLastAvatarMessageTime(Date.now());
-        console.log(`🔄 FALLBACK: Updated lastAvatarMessageTime on AVATAR_STOP_TALKING for EN compatibility`);
+        logger.debug(`🔄 FALLBACK: Updated lastAvatarMessageTime on AVATAR_STOP_TALKING for EN compatibility`);
         
         // Session ending logic - start countdown when avatar stops talking
-        console.log(`🔚 Avatar stopped talking - starting countdown sequence`);
+        logger.debug(`🔚 Avatar stopped talking - starting countdown sequence`);
         const timeSinceLastMessage = Date.now() - lastAvatarMessageTime;
-        console.log(`🔚 Time since last message: ${timeSinceLastMessage}ms`);
+        logger.debug(`🔚 Time since last message: ${timeSinceLastMessage}ms`);
         
         // Start countdown since avatar has truly stopped talking
-        console.log("✅ Avatar confirmed stopped - starting countdown sequence");
+        logger.debug("✅ Avatar confirmed stopped - starting countdown sequence");
         startCountdownSequence("AVATAR_STOP_TALKING");
       });
       
       avatar.on(StreamingEvents.AVATAR_END_MESSAGE, (event) => {
-        console.log(">>>>> Avatar end message:", event);
-        console.log("🚫 NOT starting countdown - waiting for AVATAR_STOP_TALKING to confirm avatar stopped");
+        logger.debug(">>>>> Avatar end message:", event);
+        logger.debug("🚫 NOT starting countdown - waiting for AVATAR_STOP_TALKING to confirm avatar stopped");
       });
       
       avatar.on(StreamingEvents.STREAM_DISCONNECTED, () => {
-        console.log("🔌 Stream disconnected");
-        console.log("🔌 Session state before cleanup:", sessionState);
+        logger.debug("🔌 Stream disconnected");
+        logger.debug("🔌 Session state before cleanup:", sessionState);
         setLastAvatarMessageTime(0);
         
         // Reset unmute flag on disconnect
@@ -446,40 +559,40 @@ function InteractiveAvatar() {
         // Stop audio monitoring when stream disconnects
         stopMonitoring();
         
-        console.log("🔌 Stream disconnected - all timers cleared and audio monitoring stopped");
+        logger.debug("🔌 Stream disconnected - all timers cleared and audio monitoring stopped");
       });
       
       avatar.on(StreamingEvents.STREAM_READY, (event) => {
-        console.log(">>>>> Stream ready:", event.detail);
+        logger.debug(">>>>> Stream ready:", event.detail);
       });
       
       avatar.on(StreamingEvents.USER_START, (event) => {
-        console.log(">>>>> User started talking:", event);
+        logger.debug(">>>>> User started talking:", event);
         
         // Clear session ending timers if user starts talking
         if (debounceTimerRef.current) {
           clearTimeout(debounceTimerRef.current);
           debounceTimerRef.current = null;
-          console.log("Debounce timer cleared - user started talking");
+          logger.debug("Debounce timer cleared - user started talking");
         }
         if (countdownTimerRef.current) {
-          console.log("Clearing countdown timer. Timer ID:", countdownTimerRef.current);
+          logger.debug("Clearing countdown timer. Timer ID:", countdownTimerRef.current);
           clearTimeout(countdownTimerRef.current);
           countdownTimerRef.current = null;
-          console.log("Countdown timer cleared - user started talking");
+          logger.debug("Countdown timer cleared - user started talking");
         } else {
-          console.log("No countdown timer to clear");
+          logger.debug("No countdown timer to clear");
         }
       });
       
       avatar.on(StreamingEvents.USER_STOP, (event) => {
-        console.log(">>>>> User stopped talking:", event);
+        logger.debug(">>>>> User stopped talking:", event);
       });
       avatar.on(StreamingEvents.USER_END_MESSAGE, (event) => {
-        console.log(">>>>> User end message:", event);
+        logger.debug(">>>>> User end message:", event);
       });
       avatar.on(StreamingEvents.USER_TALKING_MESSAGE, (event) => {
-        console.log(">>>>> User talking message:", event);
+        logger.debug(">>>>> User talking message:", event);
       });
 
       const updatedConfig = {
@@ -497,7 +610,7 @@ function InteractiveAvatar() {
         }
       };
 
-      console.log('InteractiveAvatar - Starting session with config:', {
+      logger.debug('InteractiveAvatar - Starting session with config:', {
         isEnglish,
         knowledgeId: updatedConfig.knowledgeId,
         language: updatedConfig.language,
@@ -509,7 +622,7 @@ function InteractiveAvatar() {
       });
 
       // Log the actual environment variables for debugging
-      console.log('Environment variables:', {
+      logger.debug('Environment variables:', {
         NEXT_PUBLIC_EN_KNOWLEDGE_BASE_ID: process.env.NEXT_PUBLIC_EN_KNOWLEDGE_BASE_ID,
         NEXT_PUBLIC_TR_KNOWLEDGE_BASE_ID: process.env.NEXT_PUBLIC_TR_KNOWLEDGE_BASE_ID,
         NEXT_PUBLIC_EN_LANGUAGE: process.env.NEXT_PUBLIC_EN_LANGUAGE,
@@ -523,11 +636,11 @@ function InteractiveAvatar() {
         
         // Start audio monitoring after voice chat is started
         if (mediaStream.current) {
-          console.log("🎧 Starting audio monitoring for automatic microphone control");
+          logger.debug("🎧 Starting audio monitoring for automatic microphone control");
           startMonitoring(mediaStream.current);
           
           // 🚨 CRITICAL FIX: Force video to switch to streaming state
-          console.log("🎬 FORCING video switch to streaming state - stream is ready");
+          logger.debug("🎬 FORCING video switch to streaming state - stream is ready");
           setTimeout(() => {
             window.dispatchEvent(new Event('avatar-start-talking'));
           }, 500); // Small delay to ensure video is playing
@@ -536,18 +649,18 @@ function InteractiveAvatar() {
       
       // GÜVENLİK: Session başarıyla başlatıldı, flag'i reset et
       setIsSessionStarting(false);
-      console.log('🔒 Session başarıyla başlatıldı, isSessionStarting flag reset edildi');
+      logger.debug('🔒 Session başarıyla başlatıldı, isSessionStarting flag reset edildi');
       
     } catch (error) {
       console.error("Error starting avatar session:", error);
       
       // GÜVENLİK: Hata durumunda da flag'i reset et
       setIsSessionStarting(false);
-      console.log('🔒 Session başlatma hatası, isSessionStarting flag reset edildi');
+      logger.debug('🔒 Session başlatma hatası, isSessionStarting flag reset edildi');
       
       // 🚨 ERROR VIDEO: Dispatch error event to play error video
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.log('🚨 Dispatching session-error event for error video');
+      logger.debug('🚨 Dispatching session-error event for error video');
       window.dispatchEvent(new CustomEvent('session-error', { 
         detail: { 
           language: isEnglish ? 'en' : 'tr',
@@ -563,7 +676,7 @@ function InteractiveAvatar() {
 
     // GÜVENLİK: Session aktifken veya başlatma sürecindeyken middle click'leri ignore et
     if (sessionState !== StreamingAvatarSessionState.INACTIVE || isSessionStarting) {
-      console.log(`Middle click ignored - session state: ${sessionState}, isSessionStarting: ${isSessionStarting}`);
+      logger.debug(`Middle click ignored - session state: ${sessionState}, isSessionStarting: ${isSessionStarting}`);
       return;
     }
 
@@ -573,22 +686,22 @@ function InteractiveAvatar() {
       clearTimeout(middleClickTimer);
       setMiddleClickTimer(null);
       setIsSessionStarting(true); // GÜVENLİK: Hemen flag set et
-      console.log('Double middle click detected: Starting English session.');
+      logger.debug('Double middle click detected: Starting English session.');
       await startSessionV2(true, true);
       return;
     }
 
     // First click: start timer
-    console.log('Single middle click detected, waiting for potential double click...');
+    logger.debug('Single middle click detected, waiting for potential double click...');
     const timer = setTimeout(async () => {
       setMiddleClickTimer(null);
       // ÇİFTE KONTROL: Timer tetiklenirken bile session state'ini kontrol et
       if (sessionState !== StreamingAvatarSessionState.INACTIVE || isSessionStarting) {
-        console.log(`Timer fired but session state changed to: ${sessionState} or isSessionStarting: ${isSessionStarting}. Ignoring timer.`);
+        logger.debug(`Timer fired but session state changed to: ${sessionState} or isSessionStarting: ${isSessionStarting}. Ignoring timer.`);
         return;
       }
       setIsSessionStarting(true); // GÜVENLİK: Timer tetiklendiğinde de flag set et
-      console.log('No double click detected: Starting Turkish session.');
+      logger.debug('No double click detected: Starting Turkish session.');
       await startSessionV2(true, false);
     }, 3000);
     setMiddleClickTimer(timer);
@@ -614,76 +727,76 @@ function InteractiveAvatar() {
 
   // Debug session state changes
   useEffect(() => {
-    console.log(`🔄 SESSION STATE CHANGED: ${sessionState}`);
+    logger.debug(`🔄 SESSION STATE CHANGED: ${sessionState}`);
     
     // Session CONNECTED olduğunda flag'i set et
     if (sessionState === StreamingAvatarSessionState.CONNECTED && !shouldUnmuteOnFirstStopRef.current) {
       setShouldUnmuteOnFirstStop(true);
       shouldUnmuteOnFirstStopRef.current = true;
-      console.log("🎧 Session CONNECTED - mikrofon ilk avatar stop talking'de unmute edilecek");
-      console.log("🔍 DEBUG: shouldUnmuteOnFirstStop flag TRUE olarak set edildi (via session state)");
+      logger.debug("🎧 Session CONNECTED - mikrofon ilk avatar stop talking'de unmute edilecek");
+      logger.debug("🔍 DEBUG: shouldUnmuteOnFirstStop flag TRUE olarak set edildi (via session state)");
     }
   }, [sessionState]);
 
   useEffect(() => {
     if (stream && mediaStream.current) {
-      console.log('Assigning stream to video element:', mediaStream.current);
+      logger.debug('Assigning stream to video element:', mediaStream.current);
       mediaStream.current.srcObject = stream;
       mediaStream.current.onloadedmetadata = () => {
-        console.log('Stream metadata loaded, playing video');
+        logger.debug('Stream metadata loaded, playing video');
         mediaStream.current!.play();
         
         // Start audio monitoring when stream is ready and playing
-        console.log("🎧 Starting audio monitoring after stream is ready");
+        logger.debug("🎧 Starting audio monitoring after stream is ready");
         startMonitoring(mediaStream.current!);
       };
     } else {
-      console.log('Stream or mediaStream.current not available:', { stream: !!stream, mediaStreamRef: !!mediaStream.current });
+      logger.debug('Stream or mediaStream.current not available:', { stream: !!stream, mediaStreamRef: !!mediaStream.current });
     }
   }, [mediaStream, stream, startMonitoring]);
 
   // Centralized countdown function
   const startCountdownSequence = (triggerSource: string) => {
-    console.log(`Starting countdown sequence from: ${triggerSource}`);
+    logger.debug(`Starting countdown sequence from: ${triggerSource}`);
     
     // CRITICAL: Clear ALL existing timers first to prevent conflicts
     if (debounceTimerRef.current) {
-      console.log(`Clearing existing debounce timer: ${debounceTimerRef.current}`);
+      logger.debug(`Clearing existing debounce timer: ${debounceTimerRef.current}`);
       clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
     }
     if (countdownTimerRef.current) {
-      console.log(`Clearing existing countdown timer: ${countdownTimerRef.current}`);
+      logger.debug(`Clearing existing countdown timer: ${countdownTimerRef.current}`);
       clearTimeout(countdownTimerRef.current);
       countdownTimerRef.current = null;
     }
     
-    console.log(`✅ Starting countdown from ${triggerSource}`);
+    logger.debug(`✅ Starting countdown from ${triggerSource}`);
     
     // Start fresh debounce timer
     debounceTimerRef.current = setTimeout(() => {
       // Double check: ensure no recent avatar messages
       const currentTime = Date.now();
       const timeSinceLastMessage = currentTime - lastAvatarMessageTime;
-      console.log(`Debounce timer fired: timeSinceLastMessage=${timeSinceLastMessage}ms`);
-      console.log(`Debug: currentTime=${currentTime}, lastAvatarMessageTime=${lastAvatarMessageTime}`);
+      logger.debug(`Debounce timer fired: timeSinceLastMessage=${timeSinceLastMessage}ms`);
+      logger.debug(`Debug: currentTime=${currentTime}, lastAvatarMessageTime=${lastAvatarMessageTime}`);
       
       // IMPROVED: Handle case where lastAvatarMessageTime is 0 or unreliable
       const isReliableTimestamp = lastAvatarMessageTime > 0 && lastAvatarMessageTime < currentTime;
       
       if (isReliableTimestamp && timeSinceLastMessage < 2000) {
-        console.log("Avatar still active based on reliable timestamp, restarting debounce");
+        logger.debug("Avatar still active based on reliable timestamp, restarting debounce");
         return;
       } else if (!isReliableTimestamp) {
-        console.log(`⚠️ Unreliable timestamp detected (lastAvatarMessageTime=${lastAvatarMessageTime}), proceeding with countdown`);
+        logger.debug(`⚠️ Unreliable timestamp detected (lastAvatarMessageTime=${lastAvatarMessageTime}), proceeding with countdown`);
       }
       
-      console.log("Avatar appears to be finished (3 seconds after message end). Starting countdown...");
+      logger.debug("Avatar appears to be finished (3 seconds after message end). Starting countdown...");
       
       // Start the main countdown timer
       const timer = setTimeout(() => {
-        console.log("5-second countdown completed - ending session and playing ending video");
-        console.log(`🔍 DEBUG: isEnglish=${isEnglish}, sending language=${isEnglish ? 'en' : 'tr'}`);
+        logger.debug("5-second countdown completed - ending session and playing ending video");
+        logger.debug(`🔍 DEBUG: isEnglish=${isEnglish}, sending language=${isEnglish ? 'en' : 'tr'}`);
         
         // First: Stop the avatar session
         stopAvatar();
@@ -691,7 +804,7 @@ function InteractiveAvatar() {
         // Then: Immediately play ending video (don't wait for session state change)
         setTimeout(() => {
           const eventData = { language: isEnglish ? 'en' : 'tr' };
-          console.log(`🎬 Dispatching session-ending event with:`, eventData);
+          logger.debug(`🎬 Dispatching session-ending event with:`, eventData);
           window.dispatchEvent(new CustomEvent('session-ending', { 
             detail: eventData
           }));
@@ -702,10 +815,10 @@ function InteractiveAvatar() {
       
       countdownTimerRef.current = timer;
       debounceTimerRef.current = null;
-      console.log("Started 5-second countdown timer. Timer ID:", timer);
+      logger.debug("Started 5-second countdown timer. Timer ID:", timer);
     }, 3000);
     
-    console.log(`Started 3-second debounce timer from ${triggerSource}. Timer ID:`, debounceTimerRef.current);
+    logger.debug(`Started 3-second debounce timer from ${triggerSource}. Timer ID:`, debounceTimerRef.current);
   };
 
   return (
